@@ -168,7 +168,7 @@ class Net(torch.nn.Module):
         outDim = model_kwargs['outDim']
         self.dropout = model_kwargs['dropout']
         self.activation_fn = {'elu': F.elu, 'relu': F.relu}[model_kwargs['activation']]
-        self.nLayers = model_kwargs['nLayers']
+        self.nLayers = model_kwargs['nLayers'] 
 
 
         conv_fn = {'GAT': GATConv, 'GCN': GCNConv, 'GraphConv': GraphConv, 'SAGE': SAGEConv}[model_kwargs['arch']]

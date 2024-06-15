@@ -37,8 +37,10 @@ class DensifyTransform(BaseTransform):
                 t = t.exp()
             return t
         data.x = densify(data.x, method=self.method)
-
         return data
+
+    def __repr__(self):
+        return 'DensifyTransform()'
 
 class ChooseLargestMaskForTrain(BaseTransform):
     def __call__(self, data):
@@ -62,6 +64,8 @@ class ChooseLargestMaskForTrain(BaseTransform):
             data.val_mask=train_mask
         return data
 
+    def __repr__(self):
+        return 'ChooseLargestMaskForTrain()'
 
 class CreateMaskTransform:
     def __init__(self, train_ratio=0.6, val_ratio=0.2, test_ratio=0.2):
@@ -98,6 +102,9 @@ class CreateMaskTransform:
         data.test_mask = test_mask
         
         return data
+    
+    def __repr__(self):
+        return 'CreateMaskTransform()'
 
 class GraphFourierTransform(BaseTransform):
     def __init__(self):
@@ -126,47 +133,9 @@ class GraphFourierTransform(BaseTransform):
         data.eigenvectors = torch.tensor(eigenvectors, dtype=torch.float)
         
         return data
-
-
-import numpy as np
-import torch
-from torch_geometric.data import Data
-from torch_geometric.utils import k_hop_subgraph
-
-# class KHopsFractionDatasetTransform:
-#     def __init__(self, fraction, num_hops=2):
-#         assert 0 < fraction <= 1, "Fraction must be between 0 and 1."
-#         self.fraction = fraction
-#         self.num_hops = num_hops
-
-#     def __call__(self, data):
-#         num_nodes = data.num_nodes
-#         num_selected_nodes = int(num_nodes * self.fraction)
-
-#         # Start from a random node
-#         start_node = np.random.randint(0, num_nodes)
-#         selected_nodes, sub_edge_index, _, _ = k_hop_subgraph(start_node, self.num_hops, edge_index=data.edge_index, num_nodes=data.num_nodes, relabel_nodes=True)
-#         if len(selected_nodes) > num_selected_nodes:
-#             selected_nodes = selected_nodes[:num_selected_nodes]
-#         sub_x, sub_y = data.x[selected_nodes], data.y[selected_nodes] if data.y is not None else None
-
-
-#         # Subset the masks accordingly
-#         sub_train_mask = data.train_mask[selected_nodes] if data.train_mask is not None else None
-#         sub_test_mask = data.test_mask[selected_nodes] if data.test_mask is not None else None
-#         sub_val_mask = data.val_mask[selected_nodes] if data.val_mask is not None else None
-
-#         # Create the subgraph data object
-#         sub_data = Data(
-#             x=sub_x,
-#             edge_index=sub_edge_index,
-#             y=sub_y,
-#             train_mask=sub_train_mask,
-#             test_mask=sub_test_mask,
-#             val_mask=sub_val_mask,
-#         )
-
-#         return sub_data
+    
+    def __repr__(self):
+        return 'GraphFourierTransform()'
 
 
 class KHopsFractionDatasetTransform:
@@ -207,3 +176,6 @@ class KHopsFractionDatasetTransform:
         )
 
         return sub_data
+
+    def __repr__(self):
+        return 'KHopsFractionDatasetTransform()'
