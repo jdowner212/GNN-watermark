@@ -8,7 +8,7 @@ results_dir  = f'{root_dir}/training_results'
 compare_dicts_dir = f'{root_dir}/compare_dicts'
 
 
-dataset_attributes = {
+dataset_attributes = { 
     'CORA': {
         'single_or_multi_graph': 'single',
         'class': Planetoid,

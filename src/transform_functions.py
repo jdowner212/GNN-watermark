@@ -4,7 +4,7 @@ import scipy
 import torch
 from   torch.fft import ihfftn as inverse_fourier_transform
 from   torch_geometric.data import Data 
-from   torch_geometric.transforms import BaseTransform
+from   torch_geometric.transforms import BaseTransform 
 from   torch_geometric.utils import subgraph, k_hop_subgraph, to_scipy_sparse_matrix
 
 

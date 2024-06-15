@@ -3,7 +3,7 @@ import copy
 import matplotlib.pyplot as plt
 import numpy as np
 import networkx as nx
-import numpy as np
+import numpy as np 
 import pickle
 import random
 from   sklearn.model_selection import train_test_split

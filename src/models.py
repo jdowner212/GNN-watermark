@@ -163,7 +163,7 @@ class Net(torch.nn.Module):
     def __init__(self, **model_kwargs):
         super(Net, self).__init__()
 # def Net(model_kwargs):
-        inDim = model_kwargs['inDim']
+        inDim = model_kwargs['inDim'] 
         hDim = model_kwargs['hDim']
         outDim = model_kwargs['outDim']
         self.dropout = model_kwargs['dropout']
