@@ -72,6 +72,7 @@ dataset_attributes = {
 
 
 
+
 def get_presets(dataset, dataset_name):
     if dataset_name=='default':
         lr=0.01
@@ -84,10 +85,10 @@ def get_presets(dataset, dataset_name):
 
         watermark_kwargs        = {'coefWmk': 1, 
                                     'pGraphs': 1, 
-                                    'p_remove':0.75, 
                                     'clf_only_epochs':100, 
-                                    'fancy':False,
-                                    'selection_kwargs': {'percent_of_features_to_watermark':100,
+                                    'watermark_type':'fancy',
+                                    'basic_selection_kwargs': {'p_remove':0.75},
+                                    'fancy_selection_kwargs': {'percent_of_features_to_watermark':100,
                                                          'evaluate_individually':False,
                                                          'selection_strategy': 'unimportant',
                                                          'multi_subg_strategy': 'average'
@@ -116,10 +117,10 @@ def get_presets(dataset, dataset_name):
 
         watermark_kwargs        = {'coefWmk': 1, 
                                    'pGraphs': 1, 
-                                   'p_remove':0.75, 
                                    'clf_only_epochs':100, 
-                                   'fancy':False,
-                                   'selection_kwargs': {'percent_of_features_to_watermark':100,
+                                    'watermark_type':'basic',
+                                    'basic_selection_kwargs': {'p_remove':0.75},
+                                    'fancy_selection_kwargs': {'percent_of_features_to_watermark':100,
                                                          'evaluate_individually':False,
                                                          'selection_strategy': 'unimportant',
                                                          'multi_subg_strategy': 'average'
@@ -179,7 +180,7 @@ def validate_subgraph_kwargs(subgraph_kwargs):
             assert khop_kwargs['nodeIndices'] is not None
         assert isinstance(khop_kwargs['numHops'],int)
         assert isinstance(khop_kwargs['max_degree'],int)
-        assert khop_kwargs['pNodes']>0 and khop_kwargs['pNodes']<1
+        assert khop_kwargs['pNodes']>0 and khop_kwargs['pNodes']<1 and isinstance(khop_kwargs['pNodes'], (int, float, complex, np.integer, np.floating))
     elif subgraph_kwargs['method']=='random':
         random_kwargs = subgraph_kwargs['random_kwargs']
         assert set(list(random_kwargs.keys()))=={'fraction','numSubgraphs'}
@@ -191,21 +192,26 @@ def validate_augment_kwargs(augment_kwargs):
         assert isinstance(augment_kwargs[k]['use'],bool)
         if k in ['nodeDrop','nodeFeatMask','edgeDrop']:
             assert set(list(augment_kwargs[k].keys()))=={'use','p'}
-            assert augment_kwargs[k]['p'] >= 0 and augment_kwargs[k]['p'] <= 1
+            assert augment_kwargs[k]['p'] >= 0 and augment_kwargs[k]['p'] <= 1 and isinstance(augment_kwargs[k]['p'], (int, float, complex, np.integer, np.floating))
         elif k=='nodeMixUp':
             assert set(list(augment_kwargs[k].keys()))=={'use','lambda'}
             assert isinstance(augment_kwargs[k]['lambda'],int) or isinstance(augment_kwargs[k]['lambda'],float)
 
 def validate_watermark_kwargs(watermark_kwargs):
-    assert set(list(watermark_kwargs.keys()))=={'coefWmk', 'coefWmk_star', 'pGraphs', 'p_remove', 'clf_only_epochs', 'fancy', 'selection_kwargs'}
-    assert watermark_kwargs['coefWmk']>0 and watermark_kwargs['coefWmk']<1
+    assert set(list(watermark_kwargs.keys()))=={'coefWmk', 'pGraphs', 'clf_only_epochs', 'watermark_type', 'basic_selection_kwargs', 'fancy_selection_kwargs'}
+    assert watermark_kwargs['coefWmk']>0 and isinstance(watermark_kwargs['coefWmk'], (int, float, complex, np.integer, np.floating))
     assert isinstance(watermark_kwargs['clf_only_epochs'],int)
-    assert isinstance(watermark_kwargs['fancy'],bool)
-    assert set(list(watermark_kwargs['selection_kwargs'].keys()))=={'percent_of_features_to_watermark', 'selection_strategy', 'multi_subg_strategy'}
-    assert watermark_kwargs['selection_kwargs']['percent_of_features_to_watermark'] >= 0 and watermark_kwargs['selection_kwargs']['percent_of_features_to_watermark'] <= 100
-    assert isinstance(watermark_kwargs['selection_kwargs'],'evaluate_individually',bool)
-    assert watermark_kwargs['selection_kwargs']['selection_strategy'] in ['unimportant','random']
-    assert watermark_kwargs['selection_kwargs']['multi_subg_strategy'] in ['concat','average']
+    assert watermark_kwargs['watermark_type'] in ['fancy','basic']
+    if watermark_kwargs['watermark_type']=='basic':
+        assert set(list(watermark_kwargs['watermark_type']['basic_selection_kwargs'].keys()))=={'p_remove'}
+        assert isinstance(watermark_kwargs['watermark_type']['basic_selection_kwargs'], (int, float, complex, np.integer, np.floating))
+    if watermark_kwargs['watermark_type']=='fancy':
+        assert watermark_kwargs['fancy_selection_kwargs']['percent_of_features_to_watermark'] >= 0 and watermark_kwargs['fancy_selection_kwargs']['percent_of_features_to_watermark'] <= 100 and isinstance(watermark_kwargs['fancy_selection_kwargs']['percent_of_features_to_watermark'], (int, float, complex, np.integer, np.floating))
+        assert set(list(watermark_kwargs['fancy_selection_kwargs'].keys()))=={'percent_of_features_to_watermark', 'evaluate_individually', 'selection_strategy', 'multi_subg_strategy'}
+        assert isinstance(watermark_kwargs['fancy_selection_kwargs']['evaluate_individually'],bool)
+        assert watermark_kwargs['fancy_selection_kwargs']['selection_strategy'] in ['unimportant','random']
+        if watermark_kwargs['fancy_selection_kwargs']['evaluate_individually']==False and watermark_kwargs['fancy_selection_kwargs']['selection_strategy']!='random':
+            assert watermark_kwargs['fancy_selection_kwargs']['multi_subg_strategy'] in ['concat','average']
 
 def validate_kwargs(node_classifier_kwargs, subgraph_kwargs, augment_kwargs, watermark_kwargs):
     validate_node_classifier_kwargs(node_classifier_kwargs)

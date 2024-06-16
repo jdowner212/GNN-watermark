@@ -240,7 +240,7 @@ def generate_subgraph(data, dataset_name, kwargs, central_node=None, avoid_nodes
 
 
 
-def generate_watermark(k, p_neg_ones=0.5, p_remove=0.75):
+def generate_basic_watermark(k, p_neg_ones=0.5, p_remove=0.75):
     j = int(p_neg_ones*k)
     watermark = torch.ones(k)
     watermark_neg_1_indices = torch.randperm(k)[:j]
@@ -357,7 +357,18 @@ def get_node_indices_to_watermark(dataset_name, graph_to_watermark, subgraph_kwa
 
 
 def collect_subgraphs_within_single_graph_for_watermarking(data, dataset_name, use_train_mask, subgraph_kwargs):
+    """
+    Collect subgraphs within a single graph for watermarking purposes.
 
+    Args:
+        data (object): The dataset object.
+        dataset_name (str): The name of the dataset.
+        use_train_mask (bool): Whether to use the training mask.
+        subgraph_kwargs (dict): Keyword arguments for subgraph generation.
+
+    Returns:
+        dict: A dictionary containing subgraph information with subgraph signatures as keys.
+    """
     subgraph_data_dir = os.path.join(data_dir,dataset_name,'subgraphs')
     if os.path.exists(subgraph_data_dir)==False:
         os.mkdir(subgraph_data_dir)
@@ -411,36 +422,58 @@ def collect_subgraphs_within_single_graph_for_watermarking(data, dataset_name, u
 
 
 def get_results_folder_name(dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs):
+    """
+    Generate the folder name for storing results based on various configuration parameters.
 
+    Args:
+        dataset_name (str): The name of the dataset.
+        lr (float): Learning rate.
+        epochs (int): Number of training epochs.
+        node_classifier_kwargs (dict): Keyword arguments for the node classifier.
+        watermark_kwargs (dict): Keyword arguments for watermarking.
+        subgraph_kwargs (dict): Keyword arguments for subgraph generation.
+        augment_kwargs (dict): Keyword arguments for data augmentation.
+
+    Returns:
+        str: The generated folder name for storing results.
+    """
     # Model Tag Construction
-    [arch, act, nLayers, hDim, dropout, skip] = [node_classifier_kwargs[k] for k in ['arch', 'activation', 'nLayers', 'hDim', 'dropout', 'skip_connections']]
+    arch = node_classifier_kwargs['arch']
+    act = node_classifier_kwargs['activation']
+    nLayers = node_classifier_kwargs['nLayers']
+    hDim = node_classifier_kwargs['hDim']
+    dropout = node_classifier_kwargs['dropout']
+    skip = node_classifier_kwargs['skip_connections']
     model_tag = f'arch{arch}_{act}_nLayers{nLayers}_hDim{hDim}_drop{dropout}_skip{skip}'
     
     if arch == 'GAT':
-        heads_1, heads_2 = node_classifier_kwargs['heads_1'], node_classifier_kwargs['heads_2']
+        heads_1 = node_classifier_kwargs['heads_1']
+        heads_2 = node_classifier_kwargs['heads_2']
         model_tag += f'_heads_{heads_1}_{heads_2}'
 
     # Watermark Tag Construction
     single_or_multi_graph = dataset_attributes[dataset_name]['single_or_multi_graph']
-    coef_wmk, pGraphs = watermark_kwargs['coefWmk'], watermark_kwargs['pGraphs']
+    coef_wmk = watermark_kwargs['coefWmk']
+    pGraphs = watermark_kwargs['pGraphs']
     wmk_tag = f'coefWmk{coef_wmk}'
+    
     if single_or_multi_graph == 'multi':
         wmk_tag = f'pGraphs{pGraphs}_' + wmk_tag
 
-    if watermark_kwargs['fancy']:
-        percent_wmk = watermark_kwargs['selection_kwargs']['percent_of_features_to_watermark']
-        strategy = watermark_kwargs['selection_kwargs']['selection_strategy']
-        wmk_tag += f'_{percent_wmk}%{strategy.capitalize()}_Indices'
+    if watermark_kwargs['watermark_type']=='fancy':
+        percent_wmk = watermark_kwargs['fancy_selection_kwargs']['percent_of_features_to_watermark']
+        strategy = watermark_kwargs['fancy_selection_kwargs']['selection_strategy'].capitalize()
+        wmk_tag += f'_{percent_wmk}%{strategy}Indices'
         
-        if watermark_kwargs['selection_kwargs']['evaluate_individually']:
-            handle_multiple = 'Individualized'
+        if watermark_kwargs['fancy_selection_kwargs']['evaluate_individually']:
+            handle_multiple = 'individualized'
         else:
-            handle_multiple = watermark_kwargs['selection_kwargs']['multi_subg_strategy'].capitalize()
+            handle_multiple = watermark_kwargs['fancy_selection_kwargs']['multi_subg_strategy']
         
-        wmk_tag += f'{handle_multiple}Indices'
-    else:
-        percent_wmk = np.round(100 * (1 - watermark_kwargs['p_remove']), 3)
-        wmk_tag += f'_{percent_wmk}%UnfancyIndices'
+        wmk_tag += f'_{handle_multiple}'
+    elif watermark_kwargs['watermark_type']=='basic':
+        percent_wmk = np.round(100 * (1 - watermark_kwargs['basic_selection_kwargs']['p_remove']), 3)
+        wmk_tag += f'_{percent_wmk}%BasicIndices'
 
     # Subgraph Tag Construction
     subgraph_tag = ''
@@ -455,23 +488,25 @@ def get_results_folder_name(dataset_name, lr, epochs, node_classifier_kwargs, wa
             num_nodes = dataset_attributes[dataset_name]['num_nodes']
             pNodes = np.round(len(nodeIndices) / num_nodes, 5)
         
-        numHops, max_degree = khop_kwargs['numHops'], khop_kwargs['max_degree']
+        numHops = khop_kwargs['numHops']
+        max_degree = khop_kwargs['max_degree']
         subgraph_tag = f'khop{numHops}_pNodes{pNodes}_maxDeg{max_degree}'
 
     elif subgraph_kwargs['method'] == 'random':
-        fraction, numSubgraphs = subgraph_kwargs['random_kwargs']['fraction'], subgraph_kwargs['random_kwargs']['numSubgraphs']
+        fraction = subgraph_kwargs['random_kwargs']['fraction']
+        numSubgraphs = subgraph_kwargs['random_kwargs']['numSubgraphs']
         subgraph_tag = f'random_fraction{fraction}_numSubgraphs{numSubgraphs}'
 
     # Augment Tag Construction
     augment_tags = []
     if augment_kwargs['nodeDrop']['use']:
-        augment_tags.append(f'nodeDropP{np.round(augment_kwargs['nodeDrop']['p'], 5)}')
+        augment_tags.append(f'nodeDropP{np.round(augment_kwargs["nodeDrop"]["p"], 5)}')
     if augment_kwargs['nodeMixUp']['use']:
-        augment_tags.append(f'nodeMixUp{np.round(augment_kwargs['nodeMixUp']['lambda'], 5)}')
+        augment_tags.append(f'nodeMixUp{np.round(augment_kwargs["nodeMixUp"]["lambda"], 5)}')
     if augment_kwargs['nodeFeatMask']['use']:
-        augment_tags.append(f'nodeFeatMask{np.round(augment_kwargs['nodeFeatMask']['p'], 5)}')
+        augment_tags.append(f'nodeFeatMask{np.round(augment_kwargs["nodeFeatMask"]["p"], 5)}')
     if augment_kwargs['edgeDrop']['use']:
-        augment_tags.append(f'edgeDrop{np.round(augment_kwargs['edgeDrop']['p'], 5)}')
+        augment_tags.append(f'edgeDrop{np.round(augment_kwargs["edgeDrop"]["p"], 5)}')
     
     augment_tag = '_'.join(augment_tags)
 
@@ -481,28 +516,17 @@ def get_results_folder_name(dataset_name, lr, epochs, node_classifier_kwargs, wa
 
     return os.path.join(dataset_folder_name, config_name)
 
+    # Example usage (assuming you have the necessary configurations and directories defined):
+    # folder_name = get_results_folder_name(dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs)
+    # print(folder_name)
 
 def save_results(node_classifier, history, subgraph_dict, all_feature_importances, all_watermark_indices, probas, dataset_name, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs,
                  lr, epochs, augment_kwargs):
     results_folder_name = get_results_folder_name(dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs)
     if os.path.exists(results_folder_name)==False:
         os.mkdir(results_folder_name)
-    for object_name, object in zip([
-                                    'node_classifier',
-                                    'history',
-                                    'subgraph_dict',
-                                    'all_feature_importances',
-                                    'all_watermark_indices',
-                                    'probas'
-                                    ],
-                                    [
-                                    node_classifier,
-                                    history,
-                                    subgraph_dict,
-                                    all_feature_importances,
-                                    all_watermark_indices,
-                                    probas
-                                    ]):
+    for object_name, object in zip(['node_classifier','history','subgraph_dict','all_feature_importances','all_watermark_indices','probas'],
+                                   [ node_classifier,  history,  subgraph_dict,  all_feature_importances,  all_watermark_indices,  probas]):
         with open(os.path.join(results_folder_name,object_name),'wb') as f:
             pickle.dump(object,f)
     print('Node classifier, history, subgraph dict, feature importances, watermark indices, and probas saved in:')
@@ -625,7 +649,71 @@ def item_not_in_any_list(item, list_of_lists):
     return True
 
 
-def identify_watermark_indices_individual_subgraph(data, subgraph_dict, k, use_rand, use_unimpt, probas, num_indices):
+
+def name_compare_dict(dataset_name, watermark_kwargs):
+    compare_dict_name = f"compare_dicts_{dataset_name}_{watermark_kwargs['watermark_type']}"
+    if watermark_kwargs['watermark_type']=='fancy':
+        compare_dict_name += f"{watermark_kwargs['fancy_selection_kwargs']['selection_strategy'].capitalize()}"
+        if watermark_kwargs['fancy_selection_kwargs']['evaluate_individually']==True:
+            compare_dict_name+='Individualized'
+        else:
+            if watermark_kwargs['fancy_selection_kwargs']['selection_strategy']!='random':
+                compare_dict_name+=watermark_kwargs['fancy_selection_kwargs']['multi_subg_strategy'].capitalize()
+    compare_dict_name += 'Indices'
+    return compare_dict_name
+
+
+
+
+def describe_selection_config(data, watermark_kwargs, subgraph_dict):
+    use_unimpt  = watermark_kwargs['fancy_selection_kwargs']['selection_strategy']=='unimportant'
+    use_rand    = watermark_kwargs['fancy_selection_kwargs']['selection_strategy']=='random'
+    use_concat  = watermark_kwargs['fancy_selection_kwargs']['multi_subg_strategy']=='concat'
+    use_avg     = watermark_kwargs['fancy_selection_kwargs']['multi_subg_strategy']=='average'
+    use_indiv   = watermark_kwargs['fancy_selection_kwargs']['evaluate_individually']
+    
+    num_subgraphs=len(subgraph_dict)
+    perc        = watermark_kwargs['fancy_selection_kwargs']['percent_of_features_to_watermark']
+    num_indices = int(perc*data.x.shape[1]/100)
+
+    message=None
+    end_tag = ', single subgraph' if num_subgraphs==1 else ', individualized for each subgraph' if (num_subgraphs>1 and use_indiv) else ', uniformly across subgraphs' if (num_subgraphs>1 and not use_indiv) else ''
+    if use_unimpt:
+        beta_tag = 'beta from single subgraph' if (num_subgraphs==1) else 'betas' if (num_subgraphs>1 and use_indiv) else 'betas from concatenated subgraphs' if (num_subgraphs>1 and not use_indiv and use_concat) else 'averaged betas from subgraphs' if (num_subgraphs>1 and use_unimpt and not use_indiv and use_avg) else ''
+        message = 'Using ' + beta_tag + f' to identify bottom {perc}% of important feature indices for watermarking' + end_tag
+    if use_rand:
+        message = f"Selecting random {perc}% of feature indices for watermarking" + end_tag 
+
+    return use_unimpt, use_rand, use_concat, use_avg, use_indiv, num_subgraphs, num_indices, message
+
+
+
+
+def get_omit_indices(x_sub, watermark, ignore_zeros_from_subgraphs=True):
+    if ignore_zeros_from_subgraphs==True:
+        zero_features_within_subgraph = torch.where(torch.sum(x_sub, dim=0) == 0)
+    else:
+        zero_features_within_subgraph = torch.tensor([[]])
+    zero_indices_within_watermark = torch.where(watermark==0)
+    omit_indices = torch.tensor(list(set(zero_features_within_subgraph[0].tolist() + zero_indices_within_watermark[0].tolist())))
+    return omit_indices
+
+def process_beta(beta, tanh_alpha, omit_indices):
+    beta = torch.tanh(tanh_alpha*beta)
+    beta = beta.clone()  # Avoid in-place operation
+    if omit_indices is not None and len(omit_indices)>0:
+        beta[omit_indices] = 0 # zero out non-contributing indices
+    return beta
+
+def get_one_minus_B_x_W(beta, watermark, omit_indices):
+    one_minus_B_x_W = 1-beta*watermark
+    one_minus_B_x_W = one_minus_B_x_W.clone() # Avoid in-place operation
+    if omit_indices is not None and len(omit_indices)>0:
+        one_minus_B_x_W[omit_indices] = 0 # zero out non-contributing indices
+    return one_minus_B_x_W
+
+
+def select_fancy_watermark_indices_individual(data, subgraph_dict, k, use_rand, use_unimpt, probas, num_indices):
     k = list(subgraph_dict.keys())[0]
 
     if use_rand:
@@ -651,8 +739,7 @@ def identify_watermark_indices_individual_subgraph(data, subgraph_dict, k, use_r
 
     return indices, feature_importance, beta
 
-
-def identify_watermark_indices_multiple_subgraphs_shared_indices(data, subgraph_dict, probas, num_indices, use_rand, use_unimpt, use_concat, use_avg):
+def select_fancy_watermark_indices_shared(data, subgraph_dict, probas, num_indices, use_rand, use_unimpt, use_concat, use_avg):
     if use_rand:
         feature_importance, beta = [],[]
         ordered_indices = torch.randperm(data.x.shape[1])
@@ -685,79 +772,34 @@ def identify_watermark_indices_multiple_subgraphs_shared_indices(data, subgraph_
 
     return all_indices, all_feature_importances, all_betas
 
-
-def describe_selection_config(data, watermark_kwargs, subgraph_dict):
-    use_unimpt  = watermark_kwargs['selection_kwargs']['selection_strategy']=='unimportant'
-    use_rand    = watermark_kwargs['selection_kwargs']['selection_strategy']=='random'
-    use_concat  = watermark_kwargs['selection_kwargs']['multi_subg_strategy']=='concat'
-    use_avg     = watermark_kwargs['selection_kwargs']['multi_subg_strategy']=='average'
-    use_indiv   = watermark_kwargs['selection_kwargs']['evaluate_individually']
-    
-    num_subgraphs=len(subgraph_dict)
-    perc        = watermark_kwargs['selection_kwargs']['percent_of_features_to_watermark']
-    num_indices = int(perc*data.x.shape[1]/100)
-
-    message=None
-    end_tag = ', single subgraph' if num_subgraphs==1 else ', individualized for each subgraph' if (num_subgraphs>1 and use_indiv) else ', uniformly across subgraphs' if (num_subgraphs>1 and not use_indiv) else ''
-    if use_unimpt:
-        beta_tag = 'beta from single subgraph' if (num_subgraphs==1) else 'betas' if (num_subgraphs>1 and use_indiv) else 'betas from concatenated subgraphs' if (num_subgraphs>1 and not use_indiv and use_concat) else 'averaged betas from subgraphs' if (num_subgraphs>1 and use_unimpt and not use_indiv and use_avg) else ''
-        message = 'Using ' + beta_tag + f' to identify bottom {perc}% of important feature indices for watermarking' + end_tag
-    if use_rand:
-        message = f"Selecting random {perc}% of feature indices for watermarking" + end_tag 
-
-    return use_unimpt, use_rand, use_concat, use_avg, use_indiv, num_subgraphs, num_indices, message
-
-def identify_watermark_indices(watermark_kwargs, data, subgraph_dict, probas):
+def select_fancy_watermark_indices(watermark_kwargs, data, subgraph_dict, probas):
     use_unimpt, use_rand, use_concat, use_avg, use_indiv, num_subgraphs, num_indices, message = describe_selection_config(data, watermark_kwargs, subgraph_dict)
     if num_subgraphs==1:
         k = list(subgraph_dict.keys())[0]
-        indices, feature_importance, beta = identify_watermark_indices_individual_subgraph(data, subgraph_dict, k, use_rand, use_unimpt, probas, num_indices)
+        indices, feature_importance, beta = select_fancy_watermark_indices_individual(data, subgraph_dict, k, use_rand, use_unimpt, probas, num_indices)
         all_indices, all_betas, all_feature_importances = [[indices]], [[feature_importance]], [[beta]]
 
     elif num_subgraphs>1:
         if use_indiv:
             all_indices, all_feature_importances, all_betas = [],[],[]
             for k in subgraph_dict.keys():
-                indices, feature_importance, beta = identify_watermark_indices_individual_subgraph(data, subgraph_dict, k, use_rand, use_unimpt, probas, num_indices)
+                indices, feature_importance, beta = select_fancy_watermark_indices_individual(data, subgraph_dict, k, use_rand, use_unimpt, probas, num_indices)
                 all_indices.append(indices)
                 all_feature_importances.append(feature_importance)
                 all_betas.append(beta)
         else:
-            all_indices, all_feature_importances, all_betas = identify_watermark_indices_multiple_subgraphs_shared_indices(data, subgraph_dict, probas, num_indices, use_rand, use_unimpt, use_concat, use_avg)
+            all_indices, all_feature_importances, all_betas = select_fancy_watermark_indices_shared(data, subgraph_dict, probas, num_indices, use_rand, use_unimpt, use_concat, use_avg)
 
     assert message is not None
     print(message)
     return all_indices, all_feature_importances, all_betas
 
 
-
-def get_omit_indices(x_sub, watermark, ignore_zeros_from_subgraphs=True):
-    if ignore_zeros_from_subgraphs==True:
-        zero_features_within_subgraph = torch.where(torch.sum(x_sub, dim=0) == 0)
-    else:
-        zero_features_within_subgraph = torch.tensor([[]])
-    zero_indices_within_watermark = torch.where(watermark==0)
-    omit_indices = torch.tensor(list(set(zero_features_within_subgraph[0].tolist() + zero_indices_within_watermark[0].tolist())))
-    return omit_indices
-
-def process_beta(beta, tanh_alpha, omit_indices):
-    beta = torch.tanh(tanh_alpha*beta)
-    beta = beta.clone()  # Avoid in-place operation
-    if omit_indices is not None and len(omit_indices)>0:
-        beta[omit_indices] = 0 # zero out non-contributing indices
-    return beta
-def get_one_minus_B_x_W(beta, watermark, omit_indices):
-    one_minus_B_x_W = 1-beta*watermark
-    one_minus_B_x_W = one_minus_B_x_W.clone() # Avoid in-place operation
-    if omit_indices is not None and len(omit_indices)>0:
-        one_minus_B_x_W[omit_indices] = 0 # zero out non-contributing indices
-    return one_minus_B_x_W
-
-def get_watermark_indices_trad(data, subgraph_dict, watermark_kwargs):
-    if watermark_kwargs['fancy']==False:
+def apply_basic_watermark(data, subgraph_dict, watermark_kwargs):
+    if watermark_kwargs['watermark_type']=='basic':
         watermark = torch.zeros(data.x.shape[1])
-        p_remove = watermark_kwargs['p_remove']
-        watermark = generate_watermark(k=data.num_node_features, p_neg_ones=0.5, p_remove=p_remove)
+        p_remove = watermark_kwargs['basic_selection_kwargs']['p_remove']
+        watermark = generate_basic_watermark(k=data.num_node_features, p_neg_ones=0.5, p_remove=p_remove)
         features_all_subgraphs = torch.vstack([subgraph_dict[subgraph_central_node]['subgraph'].x for subgraph_central_node in subgraph_dict.keys()]).squeeze()
         zero_features_across_subgraphs = torch.where(torch.sum(features_all_subgraphs,dim=0)==0)
         watermark[zero_features_across_subgraphs]=0
@@ -765,9 +807,9 @@ def get_watermark_indices_trad(data, subgraph_dict, watermark_kwargs):
             subgraph_dict[subgraph_sig]['watermark']=watermark
     return subgraph_dict
 
-def get_watermark_indices_subset(data, subgraph_dict, probas, watermark_kwargs):
-    ''' Define watermark based on regression coefficients '''
-    all_watermark_indices, all_feature_importances, _ = identify_watermark_indices(watermark_kwargs, data, subgraph_dict, probas)
+def apply_fancy_watermark(data, subgraph_dict, probas, watermark_kwargs):
+    all_watermark_indices, all_feature_importances, _ = select_fancy_watermark_indices(watermark_kwargs, data, subgraph_dict, probas)
+    
     u = len(all_watermark_indices[0])
     h1,h2,random_order = u//2, u-u//2, torch.randperm(u)
     nonzero_watermark_values = torch.tensor([1]*h1 + [-1]*h2)[random_order].float()
@@ -810,8 +852,8 @@ def setup_history(subgraph_signatures):
 def setup_subgraph_dict(data, dataset_name, subgraph_kwargs, watermark_kwargs):
     subgraph_dict = collect_subgraphs_within_single_graph_for_watermarking(data, dataset_name, use_train_mask=True, subgraph_kwargs=subgraph_kwargs)
     subgraph_signatures = list(subgraph_dict.keys())
-    if watermark_kwargs['fancy']==False:
-        subgraph_dict = get_watermark_indices_trad(data, subgraph_dict, watermark_kwargs)
+    if watermark_kwargs['watermark_type']=='basic':
+        subgraph_dict = apply_basic_watermark(data, subgraph_dict, watermark_kwargs)
     return subgraph_dict, subgraph_signatures
 
 def print_epoch_status(epoch, loss_primary, loss_watermark, beta_similarity, acc_trn, acc_val, condition_met):
@@ -857,7 +899,7 @@ def train(data, dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwar
         loss_watermark, beta_similarity = torch.tensor(0,dtype=float), torch.tensor(0,dtype=float)
 
 
-        wmk_optimization_condtion_met = (watermark_kwargs['fancy']==False) or (watermark_kwargs['fancy']==True and epoch>=watermark_kwargs['clf_only_epochs']) 
+        wmk_optimization_condtion_met = (watermark_kwargs['watermark_type']=='basic') or (watermark_kwargs['watermark_type']=='fancy' and epoch>=watermark_kwargs['clf_only_epochs']) 
         if not wmk_optimization_condtion_met:
             ''' if designing based on coefficients but the time hasn't come to optimize watermark, hold off '''
             loss = loss_primary
@@ -868,9 +910,9 @@ def train(data, dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwar
             
             probas = log_logits.clone().exp()
 
-            if watermark_kwargs['fancy']==True and epoch==watermark_kwargs['clf_only_epochs']:
+            if watermark_kwargs['watermark_type']=='fancy' and epoch==watermark_kwargs['clf_only_epochs']:
                 ''' Define watermark at subset of feature indices. If `False`, then watermark was previously-defined. '''
-                subgraph_dict, all_watermark_indices, all_feature_importances = get_watermark_indices_subset(data, subgraph_dict, probas, watermark_kwargs)
+                subgraph_dict, all_watermark_indices, all_feature_importances = apply_fancy_watermark(data, subgraph_dict, probas, watermark_kwargs)
 
             for sig in subgraph_signatures:
                 this_watermark, data_sub, subgraph_node_indices = [subgraph_dict[sig][k] for k in ['watermark','subgraph','nodeIndices']]
