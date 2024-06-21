@@ -162,7 +162,27 @@ def get_masked_subgraph_nodes(data, central_node, hops=2, mask=None):
     return original_node_ids
 
 
-def create_random_subgraph(data, subgraph_size, mask=None, avoid_nodes=None, verbose=True):
+
+def create_khop_subgraph(data, dataset_name, central_node, numHops, max_num_nodes, use_train_mask, avoid_nodes, normalize_features_):
+    if dataset_name in ['CORA','CiteSeer','PubMed','Reddit','Reddit2','CS','Flickr','computers','photo']:
+        mask = torch.tensor([True]*len(data.x)) # initially, "mask" blocks nothing
+        if use_train_mask is True:
+            mask = copy.deepcopy(data.train_mask)
+        if avoid_nodes is not None and len(avoid_nodes)>0:
+            mask[avoid_nodes] = False
+        subgraph_node_idx = get_masked_subgraph_nodes(data, central_node, hops=numHops, mask=mask)
+        if max_num_nodes is not None:
+            subgraph_node_idx = torch.tensor(random.sample(subgraph_node_idx.tolist(),max_num_nodes))
+        subgraph_node_idx, subgraph_edge_idx, _, _ = k_hop_subgraph(subgraph_node_idx, 0, edge_index=data.edge_index, num_nodes=data.num_nodes, relabel_nodes=True)
+    elif dataset_name=='PPI':
+        subgraph_node_idx, subgraph_edge_idx, _, _ = k_hop_subgraph(central_node, numHops, edge_index=data.edge_index, num_nodes=data.num_nodes, relabel_nodes=True)
+    x=data.x[subgraph_node_idx]
+    if normalize_features_==True:
+        x = normalize_features(x)
+    data_sub = Data(x, edge_index=subgraph_edge_idx, y=data.y[subgraph_node_idx])
+    return data_sub, subgraph_node_idx
+
+def create_random_subgraph(data, subgraph_size, mask=None, avoid_nodes=None, verbose=True, normalize_features_=False):
         num_nodes = data.num_nodes
         num_selected_nodes = subgraph_size
         nodes_random_order = torch.randperm(num_nodes)
@@ -174,62 +194,94 @@ def create_random_subgraph(data, subgraph_size, mask=None, avoid_nodes=None, ver
         if verbose==True:
             print('selected_nodes:',selected_nodes)
 
-
         sub_edge_index, _ = subgraph(selected_nodes, data.edge_index, relabel_nodes=True, num_nodes=num_nodes)
+        x = data.x[selected_nodes] if data.x is not None else None
+        if normalize_features_==True:
+            x = normalize_features(x)
         sub_data = Data(
-            x=data.x[selected_nodes] if data.x is not None else None,
+            x=x,
             edge_index=sub_edge_index,
             y=data.y[selected_nodes] if data.y is not None else None,
             train_mask=data.train_mask[selected_nodes] if data.train_mask is not None else None,
             test_mask=data.test_mask[selected_nodes] if data.test_mask is not None else None,
-            val_mask=data.val_mask[selected_nodes] if data.val_mask is not None else None,
-        )
-
+            val_mask=data.val_mask[selected_nodes] if data.val_mask is not None else None)
         return sub_data, selected_nodes
 
 
+def create_rwr_subgraph(data, start_node, restart_prob=0.15, subgraph_size=50, max_steps=1000, mask=None, avoid_nodes=None, normalize_features_ = False):
+    G = to_networkx(data, to_undirected=True)
+    subgraph_nodes = set([start_node])
+    current_node = start_node
 
-def generate_subgraph(data, dataset_name, kwargs, central_node=None, avoid_nodes=[], use_train_mask=True, show=True):
+    for _ in range(max_steps):
+        if len(subgraph_nodes) >= subgraph_size:
+            break
+        if random.random() < restart_prob:
+            current_node = start_node
+        else:
+            neighbors = list(G.neighbors(current_node))
+            if neighbors:
+                current_node = random.choice(neighbors)
+                if (mask is None or mask[current_node]) and (avoid_nodes is None or current_node not in avoid_nodes):
+                    subgraph_nodes.add(current_node)
+            else:
+                current_node = start_node
+
+    subgraph_node_idx = torch.tensor(list(subgraph_nodes))
+    sub_edge_index, _ = subgraph(subgraph_node_idx, data.edge_index, relabel_nodes=True, num_nodes=data.num_nodes)
+    x=data.x[subgraph_node_idx] if data.x is not None else None
+    if normalize_features_==True:
+        x = normalize_features(x)
+    sub_data = Data(
+        x=x,
+        edge_index=sub_edge_index,
+        y=data.y[subgraph_node_idx] if data.y is not None else None,
+        train_mask=data.train_mask[subgraph_node_idx] if data.train_mask is not None else None,
+        test_mask=data.test_mask[subgraph_node_idx] if data.test_mask is not None else None,
+        val_mask=data.val_mask[subgraph_node_idx] if data.val_mask is not None else None,
+    )
+
+    return sub_data, subgraph_node_idx
+
+
+def generate_subgraph(data, dataset_name, kwargs, central_node=None, avoid_nodes=[], use_train_mask=True, max_num_nodes=None, show=True):
     data = copy.deepcopy(data)
+    numSubgraphs = kwargs['numSubgraphs']
+    fraction      = kwargs['fraction']
+    normalize_features_ = kwargs['normalize_features']
         
     if kwargs['method']=='khop':
         assert central_node is not None
         max_degree  = kwargs['khop_kwargs']['max_degree']
         numHops     = kwargs['khop_kwargs']['numHops']
-
         G = to_networkx(data, to_undirected=True)
         degrees = dict(nx.degree(G))
         if central_node is None:
             ranked_node_indices = rank_training_nodes_by_degree(dataset_name, data, max_degree)
             central_node = ranked_node_indices[0]
-        if dataset_name in ['CORA','CiteSeer','PubMed','Reddit','Reddit2','CS','Flickr','computers','photo']:
-            mask = torch.tensor([True]*len(data.x)) # initially, "mask" blocks nothing
-            if use_train_mask is True:
-                mask = copy.deepcopy(data.train_mask)
-            if avoid_nodes is not None and len(avoid_nodes)>0:
-                mask[avoid_nodes] = False
-            subgraph_node_idx = get_masked_subgraph_nodes(data, central_node, hops=numHops, mask=mask)
-            subgraph_node_idx, subgraph_edge_idx, _, _ = k_hop_subgraph(subgraph_node_idx, 0, edge_index=data.edge_index, num_nodes=data.num_nodes, relabel_nodes=True)
-        elif dataset_name=='PPI':
-            subgraph_node_idx, subgraph_edge_idx, _, _ = k_hop_subgraph(central_node, numHops, edge_index=data.edge_index, num_nodes=data.num_nodes, relabel_nodes=True)
-        data_sub = Data(x=data.x[subgraph_node_idx], edge_index=subgraph_edge_idx, y=data.y[subgraph_node_idx])
+        data_sub, subgraph_node_idx = create_khop_subgraph(data, dataset_name, central_node, numHops, max_num_nodes, use_train_mask, avoid_nodes, normalize_features_)
         subgraph_signature = central_node
-        
     elif kwargs['method']=='random':
-        fraction      = kwargs['random_kwargs']['fraction']
-        numSubgraphs = kwargs['random_kwargs']['numSubgraphs']
         num_watermarked_nodes = int(fraction*(data.x.shape[0]))
         subgraph_size = int(num_watermarked_nodes/numSubgraphs)
-
-        data_sub, subgraph_node_idx = create_random_subgraph(data, subgraph_size, data.train_mask, avoid_nodes)
+        data_sub, subgraph_node_idx = create_random_subgraph(data, subgraph_size, data.train_mask, avoid_nodes, normalize_features_=normalize_features_)
+        subgraph_signature = '_'.join([str(s) for s in subgraph_node_idx.tolist()])
+    elif kwargs['method']=='random_walk_with_restart':
+        assert central_node is not None
+        restart_prob = kwargs['rwr_kwargs']['restart_prob']
+        max_steps    = kwargs['rwr_kwargs']['max_steps']
+        num_watermarked_nodes = int(fraction*(data.x.shape[0]))
+        subgraph_size = int(num_watermarked_nodes/numSubgraphs)
+        data_sub, subgraph_node_idx = create_rwr_subgraph(data, central_node, restart_prob=restart_prob, subgraph_size=subgraph_size, max_steps=max_steps, mask=data.train_mask, avoid_nodes=avoid_nodes, normalize_features_=normalize_features_)
         subgraph_signature = '_'.join([str(s) for s in subgraph_node_idx.tolist()])
 
-
     if show==True:
-        if kwargs['method']=='random':
-            title = f'random {fraction}-fraction subgraph'
-        elif kwargs['method']=='khop':
+        if kwargs['method']=='khop':
             title = f'{numHops}-hop subgraph centered at node {central_node} (degree={degrees[central_node]})'
+        elif kwargs['method']=='random':
+            title = f'random {fraction}-fraction subgraph'
+        elif kwargs['method']=='random_walk_with_restart':
+            title = f'random walk w/ restart subgraph at node {central_node}, max steps={kwargs["rwr_kwargs"]["max_steps"]} and restart_prob={kwargs["rwr_kwargs"]["restart_prob"]}'
         G_sub = to_networkx(data_sub, to_undirected=True)
         plt.figure(figsize=(5, 3))
         nx.draw_networkx(G_sub, with_labels=False,  node_color = 'blue', node_size=30)
@@ -342,17 +394,50 @@ def rank_training_nodes_by_degree(dataset_name, graph_to_watermark, max_degree=N
 
 def get_node_indices_to_watermark(dataset_name, graph_to_watermark, subgraph_kwargs):
     if subgraph_kwargs['khop_kwargs']['autoChooseSubGs']==True:
-        assert subgraph_kwargs['khop_kwargs']['pNodes'] is not None
-        p = subgraph_kwargs['khop_kwargs']['pNodes']
-        random.seed(2575)
-        num_watermarked_nodes = int(p*len(graph_to_watermark.train_mask.tolist()))
+        num_watermarked_nodes = subgraph_kwargs['numSubgraphs']
         print('num_watermarked_nodes:',num_watermarked_nodes)
+        random.seed(2575)
         ranked_nodes = rank_training_nodes_by_degree(dataset_name, graph_to_watermark, max_degree=subgraph_kwargs['khop_kwargs']['max_degree'])
         node_indices_to_watermark = ranked_nodes[:num_watermarked_nodes]
     elif subgraph_kwargs['khop_kwargs']['autoChooseSubGs']==False:
         assert subgraph_kwargs['khop_kwargs']['nodeIndices'] is not None
         node_indices_to_watermark = subgraph_kwargs['khop_kwargs']['nodeIndices']
     return node_indices_to_watermark
+
+
+
+                                                                                                                                   # regularization_type='L2',
+                                                                                                                                   # lambda_l2 = 0.01,
+                                                                                                                                   # augment_subgraphs=False,
+
+
+
+def get_subgraph_tag(subgraph_kwargs, dataset_name):
+    subgraph_tag = ''
+    fraction = subgraph_kwargs['fraction']
+    numSubgraphs = subgraph_kwargs['numSubgraphs']
+    if subgraph_kwargs['method'] == 'khop':
+        khop_kwargs = subgraph_kwargs['khop_kwargs']
+        autoChooseSubGs = khop_kwargs['autoChooseSubGs']
+        if autoChooseSubGs:
+            pass
+        else:
+            nodeIndices = khop_kwargs['nodeIndices']
+            num_nodes = dataset_attributes[dataset_name]['num_nodes']
+            fraction = np.round(len(nodeIndices) / num_nodes, 5)
+        numHops = khop_kwargs['numHops']
+        max_degree = khop_kwargs['max_degree']
+        subgraph_tag = f'khop{numHops}_fraction{fraction}_numSubgraphs{numSubgraphs}_maxDegree{max_degree}'
+    elif subgraph_kwargs['method'] == 'random':
+        subgraph_tag = f'random_fraction{fraction}_numSubgraphs{numSubgraphs}'
+    elif subgraph_kwargs['method'] == 'random_walk_with_restart':
+        rwr_kwargs = subgraph_kwargs['rwr_kwargs']
+        restart_prob = rwr_kwargs['restart_prob']
+        max_steps = rwr_kwargs['max_steps']
+        subgraph_tag = f'rwr_fraction{fraction}_numSubgraphs{numSubgraphs}_restart_prob{restart_prob}_maxSteps{max_steps}'
+
+    return subgraph_tag
+
 
 
 
@@ -372,16 +457,9 @@ def collect_subgraphs_within_single_graph_for_watermarking(data, dataset_name, u
     subgraph_data_dir = os.path.join(data_dir,dataset_name,'subgraphs')
     if os.path.exists(subgraph_data_dir)==False:
         os.mkdir(subgraph_data_dir)
-    these_subgraphs_filename = None
-    if subgraph_kwargs['method']=='khop':
-        kwargs = subgraph_kwargs['khop_kwargs']
-        [numHops, maxDegree, pNodes] = [kwargs[k] for k in ['numHops','max_degree','pNodes']]
-        these_subgraphs_filename = f'khop_numHops{numHops}_maxDegree{maxDegree}_pNodes{pNodes}'
-    elif subgraph_kwargs['method']=='random':
-        kwargs = subgraph_kwargs['random_kwargs']
-        [fraction, numSubgraphs] = [kwargs[k] for k in ['fraction','numSubgraphs']]
-        these_subgraphs_filename = f'random_fraction{fraction}_numSubgraphs{numSubgraphs}'
+    these_subgraphs_filename = get_subgraph_tag(subgraph_kwargs, dataset_name)
     these_subgraphs_filepath = os.path.join(subgraph_data_dir,these_subgraphs_filename)
+    numSubgraphs = subgraph_kwargs['numSubgraphs']
 
 
     try:
@@ -392,12 +470,15 @@ def collect_subgraphs_within_single_graph_for_watermarking(data, dataset_name, u
             node_indices_to_watermark = get_node_indices_to_watermark(dataset_name, data, subgraph_kwargs)
             assert node_indices_to_watermark is not None
             enumerate_over_me = node_indices_to_watermark
+        elif subgraph_kwargs['method']=='random_walk_with_restart':
+            ''' this method relies on numSubgraphs '''
+            node_indices_to_watermark = get_node_indices_to_watermark(dataset_name, data, subgraph_kwargs)
+            assert node_indices_to_watermark is not None
+            enumerate_over_me = node_indices_to_watermark
         elif subgraph_kwargs['method']=='random':
             ''' this method relies on numSubgraphs '''
-            numSubgraphs = subgraph_kwargs['random_kwargs']['numSubgraphs']
             assert numSubgraphs is not None
             enumerate_over_me = range(numSubgraphs)
-
 
         subgraph_dict = {}
         seen_nodes = []
@@ -405,7 +486,7 @@ def collect_subgraphs_within_single_graph_for_watermarking(data, dataset_name, u
         for i, item in enumerate(enumerate_over_me):
             avoid_indices=seen_nodes
             print(f'Forming subgraph {i+1} of {numSubgraphs}',end='\r')
-            if subgraph_kwargs['method']=='khop':
+            if subgraph_kwargs['method'] in ['khop', 'random_walk_with_restart']:
                 central_node=item
                 print("central_node:",central_node)
             else:
@@ -413,7 +494,26 @@ def collect_subgraphs_within_single_graph_for_watermarking(data, dataset_name, u
             data_sub, subgraph_signature, subgraph_node_indices = generate_subgraph(data, dataset_name, subgraph_kwargs, central_node, avoid_indices, use_train_mask, show=False)
             subgraph_dict[subgraph_signature] = {'subgraph': data_sub, 'nodeIndices': subgraph_node_indices}
             seen_nodes += subgraph_node_indices.tolist()
+# ###
 
+#         subgraphs = [subgraph_dict[subgraph_sig]['subgraph'] for subgraph_sig in subgraph_dict.keys()]
+#         original_values = [subgraph.x.clone() for subgraph in subgraphs]
+#         all_features = torch.cat([subgraph.x for subgraph in subgraphs], dim=0)
+#         global_min = all_features.min(dim=0, keepdim=True)
+#         global_max = all_features.max(dim=0, keepdim=True)
+#         for subgraph in subgraphs:
+#             subgraph.x = (subgraph.x - global_min) / (global_max-global_min)
+
+#         # Checking if values have changed
+#         for i, (original, normalized) in enumerate(zip(original_values, subgraphs)):
+#             if not torch.equal(original, normalized.x):
+#                 print(f"Data object {i + 1} has been successfully normalized.")
+#             else:
+#                 print(f"Data object {i + 1} has not changed.")
+
+
+
+# ###
         with open(these_subgraphs_filepath,'wb') as f:
             pickle.dump(subgraph_dict, f)
 
@@ -421,7 +521,7 @@ def collect_subgraphs_within_single_graph_for_watermarking(data, dataset_name, u
 
 
 
-def get_results_folder_name(dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs):
+def get_results_folder_name(dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs):
     """
     Generate the folder name for storing results based on various configuration parameters.
 
@@ -476,26 +576,11 @@ def get_results_folder_name(dataset_name, lr, epochs, node_classifier_kwargs, wa
         wmk_tag += f'_{percent_wmk}%BasicIndices'
 
     # Subgraph Tag Construction
-    subgraph_tag = ''
-    if subgraph_kwargs['method'] == 'khop':
-        khop_kwargs = subgraph_kwargs['khop_kwargs']
-        autoChooseSubGs = khop_kwargs['autoChooseSubGs']
-        
-        if autoChooseSubGs:
-            pNodes = khop_kwargs['pNodes']
-        else:
-            nodeIndices = khop_kwargs['nodeIndices']
-            num_nodes = dataset_attributes[dataset_name]['num_nodes']
-            pNodes = np.round(len(nodeIndices) / num_nodes, 5)
-        
-        numHops = khop_kwargs['numHops']
-        max_degree = khop_kwargs['max_degree']
-        subgraph_tag = f'khop{numHops}_pNodes{pNodes}_maxDeg{max_degree}'
+    subgraph_tag = get_subgraph_tag(subgraph_kwargs, dataset_name)
 
-    elif subgraph_kwargs['method'] == 'random':
-        fraction = subgraph_kwargs['random_kwargs']['fraction']
-        numSubgraphs = subgraph_kwargs['random_kwargs']['numSubgraphs']
-        subgraph_tag = f'random_fraction{fraction}_numSubgraphs{numSubgraphs}'
+    # Loss Tag Construction
+    loss_tag = get_watermark_loss_tag(watermark_loss_kwargs)
+
 
     # Augment Tag Construction
     augment_tags = []
@@ -506,23 +591,19 @@ def get_results_folder_name(dataset_name, lr, epochs, node_classifier_kwargs, wa
     if augment_kwargs['nodeFeatMask']['use']:
         augment_tags.append(f'nodeFeatMask{np.round(augment_kwargs["nodeFeatMask"]["p"], 5)}')
     if augment_kwargs['edgeDrop']['use']:
-        augment_tags.append(f'edgeDrop{np.round(augment_kwargs["edgeDrop"]["p"], 5)}')
-    
+        augment_tags.append(f'edgeDrop{np.round(augment_kwargs["edgeDrop"]["p"], 5)}')    
     augment_tag = '_'.join(augment_tags)
+    
 
     # Combine All Tags into Config Name
-    config_name = f'{model_tag}_{wmk_tag}_{subgraph_tag}_{augment_tag}_lr{lr}_epochs{epochs}'
+    config_name = f'{model_tag}_{wmk_tag}_{subgraph_tag}_{loss_tag}_{augment_tag}_lr{lr}_epochs{epochs}'
     dataset_folder_name = os.path.join(results_dir, dataset_name)
 
     return os.path.join(dataset_folder_name, config_name)
 
-    # Example usage (assuming you have the necessary configurations and directories defined):
-    # folder_name = get_results_folder_name(dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs)
-    # print(folder_name)
 
-def save_results(node_classifier, history, subgraph_dict, all_feature_importances, all_watermark_indices, probas, dataset_name, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs,
-                 lr, epochs, augment_kwargs):
-    results_folder_name = get_results_folder_name(dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs)
+def save_results(node_classifier, history, subgraph_dict, all_feature_importances, all_watermark_indices, probas, dataset_name, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, lr, epochs, augment_kwargs, watermark_loss_kwargs):
+    results_folder_name = get_results_folder_name(dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs)
     if os.path.exists(results_folder_name)==False:
         os.mkdir(results_folder_name)
     for object_name, object in zip(['node_classifier','history','subgraph_dict','all_feature_importances','all_watermark_indices','probas'],
@@ -535,15 +616,14 @@ def save_results(node_classifier, history, subgraph_dict, all_feature_importance
 
 
 def extract_results_random_subgraphs(data, dataset_name, fraction, numSubgraphs, alpha, watermark, probas, node_classifier, subgraph_kwargs, use_train_mask=False):
+    subgraph_kwargs['numSubgraphs']=numSubgraphs
+    subgraph_kwargs['fraction']=fraction
     if subgraph_kwargs['method']=='khop':
         num_nodes = data.x.shape[0]
-        numSubgraphs = int(fraction*num_nodes)
-        subgraph_kwargs['pNodes']=fraction
         node_indices_to_watermark = random.sample(list(range(num_nodes)),numSubgraphs) 
         subgraph_kwargs['khop_kwargs']['nodeIndices'] = node_indices_to_watermark
     elif subgraph_kwargs['method']=='random':
-        subgraph_kwargs['random_kwargs']['fraction']=fraction
-        subgraph_kwargs['random_kwargs']['numSubgraphs']=numSubgraphs
+        pass
 
     subgraph_dict = collect_subgraphs_within_single_graph_for_watermarking(data, dataset_name, use_train_mask, subgraph_kwargs)
     betas_dict  = {k:[] for k in subgraph_dict.keys()}
@@ -563,8 +643,8 @@ def extract_results_random_subgraphs(data, dataset_name, fraction, numSubgraphs,
         x_sub = data_sub.x
         y_sub = probas[subgraph_node_indices]
 
-        omit_indices = get_omit_indices(x_sub, watermark,ignore_zeros_from_subgraphs=False)
-        beta = process_beta(solve_regression(x_sub, y_sub), alpha, omit_indices)
+        omit_indices,not_omit_indices = get_omit_indices(x_sub, watermark,ignore_zeros_from_subgraphs=False)
+        beta = process_beta(solve_regression(x_sub, y_sub), alpha, omit_indices, scale_beta_method)
         betas_dict[sig].append(beta.clone().detach())
         beta_similarities_dict[sig] = torch.sum(beta*watermark)
 
@@ -650,16 +730,9 @@ def item_not_in_any_list(item, list_of_lists):
 
 
 
-def name_compare_dict(dataset_name, watermark_kwargs):
-    compare_dict_name = f"compare_dicts_{dataset_name}_{watermark_kwargs['watermark_type']}"
-    if watermark_kwargs['watermark_type']=='fancy':
-        compare_dict_name += f"{watermark_kwargs['fancy_selection_kwargs']['selection_strategy'].capitalize()}"
-        if watermark_kwargs['fancy_selection_kwargs']['evaluate_individually']==True:
-            compare_dict_name+='Individualized'
-        else:
-            if watermark_kwargs['fancy_selection_kwargs']['selection_strategy']!='random':
-                compare_dict_name+=watermark_kwargs['fancy_selection_kwargs']['multi_subg_strategy'].capitalize()
-    compare_dict_name += 'Indices'
+def name_compare_dict(dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs):
+    folder_name = get_results_folder_name(dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs)
+    compare_dict_name = f"compare_dicts_{folder_name}"
     return compare_dict_name
 
 
@@ -696,10 +769,39 @@ def get_omit_indices(x_sub, watermark, ignore_zeros_from_subgraphs=True):
         zero_features_within_subgraph = torch.tensor([[]])
     zero_indices_within_watermark = torch.where(watermark==0)
     omit_indices = torch.tensor(list(set(zero_features_within_subgraph[0].tolist() + zero_indices_within_watermark[0].tolist())))
-    return omit_indices
+    not_omit_indices = torch.tensor([i for i in range(x_sub.shape[1]) if i not in omit_indices])
+    return omit_indices, not_omit_indices
 
-def process_beta(beta, tanh_alpha, omit_indices):
-    beta = torch.tanh(tanh_alpha*beta)
+
+def get_watermark_loss_tag(loss_kwargs):
+    
+    tag = f'eps{loss_kwargs['epsilon']}_'
+    if loss_kwargs['scale_beta_method'] is None:
+        tag+='raw_beta'
+    else:
+        if loss_kwargs['scale_beta_method']=='tanh':
+            tag+= f'tanh_{loss_kwargs["alpha"]}*beta'
+        elif loss_kwargs['scale_beta_method']=='tan':
+            tag+= f'tan_{loss_kwargs["alpha"]}*beta'
+        elif loss_kwargs['scale_beta_method']=='clip':
+            tag+= f'clipped_beta'
+    if loss_kwargs['regularization_type'] is not None:
+        tag += f'_{loss_kwargs["regularization_type"]}'
+        if loss_kwargs['regularization_type']=='L2':
+            tag += f'_lambdaL2{loss_kwargs["lambda_l2"]}'
+    return tag
+        
+
+
+def process_beta(beta, alpha, omit_indices, scale_beta_method='clip'):
+    if scale_beta_method=='tanh':
+        beta = torch.tanh(alpha*beta)
+    elif scale_beta_method=='tan':
+        beta = torch.tan(alpha*beta)
+    elif scale_beta_method=='clip':
+        beta = torch.clip(beta,min=-1,max=1)
+    elif scale_beta_method==None:
+        pass
     beta = beta.clone()  # Avoid in-place operation
     if omit_indices is not None and len(omit_indices)>0:
         beta[omit_indices] = 0 # zero out non-contributing indices
@@ -856,31 +958,81 @@ def setup_subgraph_dict(data, dataset_name, subgraph_kwargs, watermark_kwargs):
         subgraph_dict = apply_basic_watermark(data, subgraph_dict, watermark_kwargs)
     return subgraph_dict, subgraph_signatures
 
-def print_epoch_status(epoch, loss_primary, loss_watermark, beta_similarity, acc_trn, acc_val, condition_met):
+def print_epoch_status(epoch, loss_primary, loss_watermark, beta_similarity, acc_trn, acc_val, condition_met,beta_std_dev_penalty):
     if condition_met:
-        epoch_printout = f'Epoch: {epoch:3d}, loss_primary = {loss_primary:.3f}, loss_watermark = {loss_watermark:.3f}, B*W = {beta_similarity:.5f}, train acc = {acc_trn:.3f}, val acc = {acc_val:.3f}'
+        epoch_printout = f'Epoch: {epoch:3d}, loss_primary = {loss_primary:.3f}, loss_watermark = {loss_watermark:.3f}, B*W = {beta_similarity:.5f}, train acc = {acc_trn:.3f}, val acc = {acc_val:.3f}, beta_std_dev: {beta_std_dev_penalty:.3f}'
     else:
         epoch_printout = f'Epoch: {epoch:3d}, loss_primary = {loss_primary:.3f}, loss_watermark = n/a, B*W = n/a, train acc = {acc_trn:.3f}, val acc = {acc_val:.3f}'
     print(epoch_printout)
 
 
-def optimize_watermark(loss_watermark, beta_similarity, x_sub, y_sub, this_watermark, betas_dict, beta_similarities_dict, sig, alpha, epoch_condition, ignore_zeros_from_subgraphs=False):
+
+def optimize_watermark(loss_watermark, beta_similarity, x_sub, y_sub, this_watermark, betas_dict, beta_similarities_dict, sig, 
+                       #alpha, epsilon, 
+                       epoch_condition, ignore_zeros_from_subgraphs=False, 
+                       #scale_beta_method='clip', 
+                       debug=False,
+                       watermark_loss_kwargs={}):
+    
+
+
     ''' epoch condtion: epoch==epoch-1'''
-    omit_indices        = get_omit_indices(x_sub, this_watermark,ignore_zeros_from_subgraphs=ignore_zeros_from_subgraphs)
-    beta                = process_beta(solve_regression(x_sub, y_sub), alpha, omit_indices)
-    one_minus_B_x_W     = get_one_minus_B_x_W(beta, this_watermark, omit_indices)
-    this_loss_watermark = torch.sum(one_minus_B_x_W)/len(torch.where(beta!=0)[0])
-    betas_dict[sig].append(beta.clone().detach())
-    loss_watermark += this_loss_watermark
-    beta_similarity += torch.sum(beta*this_watermark)
+    omit_indices,not_omit_indices = get_omit_indices(x_sub, this_watermark,ignore_zeros_from_subgraphs=ignore_zeros_from_subgraphs) #indices where watermark is 0
+    
+    raw_beta            = solve_regression(x_sub, y_sub)
+    beta                = process_beta(raw_beta, watermark_loss_kwargs['alpha'], omit_indices, watermark_loss_kwargs['scale_beta_method'])
+
+    B_x_W = (beta*this_watermark).clone()
+    B_x_W = B_x_W[not_omit_indices]
+    this_loss_watermark = torch.mean(torch.clamp(watermark_loss_kwargs['epsilon']-B_x_W, min=0))
+    this_beta_similarity = torch.mean(B_x_W)
+    loss_watermark  += this_loss_watermark
+    beta_similarity += this_beta_similarity
+    if debug:
+        print(f"Subgraph: Loss Watermark: {this_loss_watermark.item()}, Beta Similarity: {this_beta_similarity.item()}")
+    
+    
     if epoch_condition:
-        beta_similarities_dict[sig]=torch.sum(beta*this_watermark)
+        beta_similarities_dict[sig] = this_beta_similarity
+    betas_dict[sig].append(raw_beta.clone().detach())
     return loss_watermark, beta_similarity, betas_dict, beta_similarities_dict
 
+def get_reg_term(betas_from_every_subgraph, regularization_type, lambda_l2):
+    if regularization_type==None:
+        return 0
+    else:
+        if regularization_type=='L2':
+            reg = sum(torch.norm(betas_from_every_subgraph[i]) for i in range(len(betas_from_every_subgraph)))
+            reg *= lambda_l2
+        elif regularization_type=='beta_var':
+            inter_tensor_variance = torch.std(betas_from_every_subgraph, dim=0, unbiased=False)
+            reg = torch.sum(inter_tensor_variance)
+        return reg
 
-def train(data, dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, save=True):
+def normalize_features(features):
+    mean = features.mean(dim=0, keepdim=True)
+    std = features.std(dim=0, keepdim=True) + 1e-10  # to avoid division by zero
+    normalized_features = (features - mean) / std
+    return normalized_features
 
-    validate_kwargs(node_classifier_kwargs, subgraph_kwargs, augment_kwargs, watermark_kwargs)
+
+def train(data, dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs,
+          #epsilon,
+          #alpha=1e3, 
+          #scale_beta_method='clip', 
+          #regularization_type=None,
+          #lambda_l2 = 0.001,
+          #augment_subgraphs=False,
+          debug_multiple_subgraphs=True, 
+          save=True
+          ):
+    
+
+
+
+    assert watermark_loss_kwargs['scale_beta_method'] in [None,'tan','tanh','clip']
+
+    validate_kwargs(node_classifier_kwargs, subgraph_kwargs, augment_kwargs, watermark_kwargs, watermark_loss_kwargs)
     
     node_classifier, optimizer                  = initialize_training(data, node_classifier_kwargs, lr)
     subgraph_dict, subgraph_signatures          = setup_subgraph_dict(data, dataset_name, subgraph_kwargs, watermark_kwargs)
@@ -897,6 +1049,7 @@ def train(data, dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwar
         log_logits          = node_classifier(x, edge_index)
         loss_primary        = F.nll_loss(log_logits[data.train_mask], y[data.train_mask])
         loss_watermark, beta_similarity = torch.tensor(0,dtype=float), torch.tensor(0,dtype=float)
+        beta_std_dev_penalty=torch.tensor(0,dtype=float)
 
 
         wmk_optimization_condtion_met = (watermark_kwargs['watermark_type']=='basic') or (watermark_kwargs['watermark_type']=='fancy' and epoch>=watermark_kwargs['clf_only_epochs']) 
@@ -914,15 +1067,31 @@ def train(data, dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwar
                 ''' Define watermark at subset of feature indices. If `False`, then watermark was previously-defined. '''
                 subgraph_dict, all_watermark_indices, all_feature_importances = apply_fancy_watermark(data, subgraph_dict, probas, watermark_kwargs)
 
+            betas_from_every_subgraph = []
             for sig in subgraph_signatures:
                 this_watermark, data_sub, subgraph_node_indices = [subgraph_dict[sig][k] for k in ['watermark','subgraph','nodeIndices']]
+
+                x_sub = data_sub.x
+                y_sub = probas[subgraph_node_indices]
                 x_sub, y_sub = data_sub.x, probas[subgraph_node_indices]
 
-                loss_watermark, beta_similarity, betas_dict, beta_similarities_dict = optimize_watermark(loss_watermark, beta_similarity, x_sub, y_sub, this_watermark, betas_dict, beta_similarities_dict, sig, 1e3, epoch==epochs-1, ignore_zeros_from_subgraphs=False)
-            
+
+                loss_watermark, beta_similarity, betas_dict, beta_similarities_dict = optimize_watermark(loss_watermark, beta_similarity, x_sub, y_sub, this_watermark, betas_dict, 
+                                                                                                         beta_similarities_dict, sig, 
+                                                                                                         #alpha, epsilon, 
+                                                                                                         epoch==epochs-1, ignore_zeros_from_subgraphs=False, 
+                                                                                                         #scale_beta_method=scale_beta_method, 
+                                                                                                         debug=debug_multiple_subgraphs,
+                                                                                                         watermark_loss_kwargs=watermark_loss_kwargs)
+                betas_from_every_subgraph.append(betas_dict[sig][-1])
+            betas_from_every_subgraph = torch.vstack(betas_from_every_subgraph)
+
             loss_watermark /= len(subgraph_dict)
             beta_similarity /= len(subgraph_dict)
-            loss=loss_primary+coef_wmk*loss_watermark
+
+
+            reg = get_reg_term(betas_from_every_subgraph, watermark_loss_kwargs['regularization_type'], watermark_loss_kwargs['lambda_l2'])
+            loss=loss_primary  +  coef_wmk*(loss_watermark+beta_std_dev_penalty)  +  reg
             loss.backward()
 
         optimizer.step()
@@ -930,13 +1099,13 @@ def train(data, dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwar
         acc_trn = accuracy(log_logits[data.train_mask], y[data.train_mask])
         acc_val = accuracy(log_logits[data.val_mask],   y[data.val_mask])
         history = update_history_one_epoch(history, loss, loss_primary, loss_watermark, acc_trn, acc_val)
-        print_epoch_status(epoch, loss_primary, loss_watermark, beta_similarity, acc_trn, acc_val, wmk_optimization_condtion_met)
+        print_epoch_status(epoch, loss_primary, loss_watermark, beta_similarity, acc_trn, acc_val, wmk_optimization_condtion_met,beta_std_dev_penalty)
     
     history['betas']=betas_dict
     history['beta_similarities'] = beta_similarities_dict
 
     if save==True:
-        save_results(node_classifier, history, subgraph_dict, all_feature_importances, all_watermark_indices, probas, dataset_name, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, lr, epochs, augment_kwargs)
+        save_results(node_classifier, history, subgraph_dict, all_feature_importances, all_watermark_indices, probas, dataset_name, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, lr, epochs, augment_kwargs, watermark_loss_kwargs)
     return node_classifier, history, subgraph_dict, all_feature_importances, all_watermark_indices, probas
 
 
@@ -952,51 +1121,61 @@ def update_history_one_epoch(history, loss, loss_primary, loss_watermark, acc_tr
     return history
 
 
-
-
-def gather_random_subgraphs_for_testing(data, dataset_name, max_degrees_choices=[20,50,100],pNodes_choices=[0.005,0.001,0.01],frac_choices = [0.001,0.004,0.005,0.01], nHops_choices=[1,2,3]):
-    subgraph_kwargs =   {'method': 'random',  
-                                'khop_kwargs':   {'autoChooseSubGs': True,   'nodeIndices':  None,   'numHops': None,   'max_degree': None,   'pNodes': None},
-                                'random_kwargs': {'fraction': None,         'numSubgraphs': 1}
-                            }
+def gather_random_subgraphs_for_testing(data, dataset_name, 
+                                        max_degrees_choices=[20,50,100], 
+                                        frac_choices = [0.001,0.004,0.005,0.01], 
+                                        restart_prob_choices = [0,0.1,0.2], 
+                                        nHops_choices=[1,2,3], 
+                                        limit_khop_num_nodes=False):
+    # create blank subgraph_dict to fill
+    subgraph_kwargs =   {'method':          'random',  
+                         'fraction':        None,
+                         'numSubgraphs':    1,
+                                'khop_kwargs':      {'autoChooseSubGs': True,   'nodeIndices':  None,   'numHops': None,   'max_degree': None},
+                                'random_kwargs':    {},
+                                'rwr_kwargs':       {'restart_prob':None,       'max_steps':1000}}
     
     if dataset_name=='computers':
-        nHops_choices = [1]
         max_degrees_choices = [20]
-        pNodes_choices = [0.001]
-        frac_choices = [0.001]
-
 
     use_train_mask=True
     num_ = 50
     avoid_indices = []
     subgraphs = []
     for i in range(num_):
-        subgraph_kwargs['method'] = np.random.choice(['khop','random'])
+        max_num_nodes=None
+        subgraph_kwargs['method'] = np.random.choice(['khop','random','random_walk_with_restart'])
+        fraction = subgraph_kwargs['fraction'] = np.random.choice(frac_choices)
         print(f'Forming subgraph {i+1} of {num_}: {subgraph_kwargs['method']}',end='\r')
         if subgraph_kwargs['method']=='khop':
+            if limit_khop_num_nodes==True:
+                max_num_nodes = int(data.x.shape[0]*fraction)
             subgraph_kwargs['khop_kwargs']['numHops'] = np.random.choice(nHops_choices)
             maxDegree = subgraph_kwargs['khop_kwargs']['maxDegree'] = np.random.choice(max_degrees_choices)
-            pNodes = subgraph_kwargs['khop_kwargs']['pNodes'] = np.random.choice(pNodes_choices)
-
             random.seed(2575)
-            num_watermarked_nodes = int(pNodes*len(data.train_mask.tolist()))
+            num_watermarked_nodes = int(fraction*len(data.train_mask.tolist()))
             ranked_nodes = torch.tensor(rank_training_nodes_by_degree(dataset_name, data, max_degree=maxDegree)[:100])
             idxs = torch.randperm(len(ranked_nodes))
             ranked_nodes = ranked_nodes[idxs]
             node_indices_to_watermark = ranked_nodes[:num_watermarked_nodes]
             central_node = node_indices_to_watermark[0]
-
-
-        if subgraph_kwargs['method']=='random':
-            subgraph_kwargs['random_kwargs']['fraction'] = np.random.choice(frac_choices)
+        elif subgraph_kwargs['method']=='random_walk_with_restart':
+            max_num_nodes = int(data.x.shape[0]*fraction)
+            subgraph_kwargs['rwr_kwargs']['restart_prob'] = np.random.choice(restart_prob_choices)
+            ranked_nodes = torch.tensor(rank_training_nodes_by_degree(dataset_name, data, max_degree=maxDegree)[:100])
+            idxs = torch.randperm(len(ranked_nodes))
+            ranked_nodes = ranked_nodes[idxs]
+            node_indices_to_watermark = ranked_nodes[:num_watermarked_nodes]
+            central_node = node_indices_to_watermark[0]
+        elif subgraph_kwargs['method']=='random':
             central_node=None
 
-
-        data_sub, _, subgraph_node_indices = generate_subgraph(data, dataset_name, subgraph_kwargs, central_node, avoid_indices, use_train_mask, show=False)
+        data_sub, _, subgraph_node_indices = generate_subgraph(data, dataset_name, subgraph_kwargs, central_node, avoid_indices, use_train_mask, max_num_nodes=max_num_nodes, show=False)
         subgraphs.append((data_sub,subgraph_node_indices))
-
-        avoid_indices += subgraph_node_indices
+        try:
+            avoid_indices += [node_index.item() for node_index in subgraph_node_indices]
+        except:
+            avoid_indices += [node_index.item() for node_index in subgraph_node_indices]
 
     return subgraphs
 

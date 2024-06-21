@@ -96,10 +96,20 @@ def get_presets(dataset, dataset_name):
                                     }
         
 
-        subgraph_kwargs         =   {'method': 'random',  
-                                     'khop_kwargs':   {'autoChooseSubGs': True,   'nodeIndices':  None,   'numHops': 1,   'max_degree': 50,   'pNodes': 0.005},
-                                     'random_kwargs': {'fraction': 0.003,         'numSubgraphs': 1}
+        subgraph_kwargs         =   {'method': 'random',
+                                     'fraction':0.003,
+                                     'numSubgraphs': 1,
+                                     'normalize_features':False, 
+                                     'khop_kwargs':   {'autoChooseSubGs': True,   'nodeIndices':  None,   'numHops': 1,   'max_degree': 50},
+                                     'random_kwargs': {},
+                                     'rwr_kwargs': {'restart_prob':0.15, 'max_steps':1000}
                                     }
+        
+        watermark_loss_kwargs = {'epsilon': 0.001,
+                                 'scale_beta_method': None,
+                                 'alpha': None,
+                                 'regularization_type': None,
+                                 'lambda_l2': 0.01}
 
         augment_kwargs = {'nodeDrop':{'use':True,'p':0.45}, 
                           'nodeMixUp':{'use':True,'lambda':100},  
@@ -126,10 +136,20 @@ def get_presets(dataset, dataset_name):
                                                          'multi_subg_strategy': 'average'
                                                         }} 
 
+        watermark_loss_kwargs = {'epsilon': 0.001,
+                                 'scale_beta_method': None,
+                                 'alpha': None,
+                                 'regularization_type': None,
+                                 'lambda_l2': 0.01}
 
         subgraph_kwargs         =   {'method': 'random',  
-                                     'khop_kwargs':   {'autoChooseSubGs': True,   'nodeIndices':  None,   'numHops': 1,   'max_degree': 50,   'pNodes': 0.005},
-                                     'random_kwargs': {'fraction': 0.003,         'numSubgraphs': 1}
+                                     'fraction': 0.003,
+                                     'numSubgraphs': 1,
+                                     'normalize_features':False, 
+                                     'khop_kwargs':   {'autoChooseSubGs': True,   'nodeIndices':  None,   'numHops': 1,   'max_degree': 50},
+                                     'random_kwargs': {},
+                                     'rwr_kwargs': {'restart_prob':0.15, 'max_steps':1000},
+
                                     }
                     
 
@@ -151,12 +171,15 @@ def get_presets(dataset, dataset_name):
                           'nodeMixUp': {'use': True, 'lambda': 40},
                           'nodeFeatMask': {'use': True, 'p': 0.3},
                           'edgeDrop': {'use': True, 'p': 0.3}}
-        subgraph_kwargs['random_kwargs']['fraction']=0.005
+        subgraph_kwargs['fraction']=0.005
 
 
     assert watermark_kwargs['clf_only_epochs']<=epochs
 
-    return lr, epochs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs
+    return lr, epochs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs
+
+
+
 
 
 
@@ -170,41 +193,47 @@ def validate_node_classifier_kwargs(node_classifier_kwargs):
     assert isinstance(node_classifier_kwargs['skip_connections'],bool)
 
 def validate_subgraph_kwargs(subgraph_kwargs):
-    assert set(list(subgraph_kwargs.keys()))=={'method','khop_kwargs','random_kwargs'}
-    assert subgraph_kwargs['method'] in ['random','khop']
+    assert set(list(subgraph_kwargs.keys()))=={'method','numSubgraphs','fraction','normalize_features', 'khop_kwargs','random_kwargs','rwr_kwargs'}
+    assert isinstance(subgraph_kwargs['numSubgraphs'],int)
+    assert isinstance(subgraph_kwargs['fraction'], (int, float, np.integer, np.floating))
+    assert isinstance(subgraph_kwargs['normalize_features'], bool)
+    assert subgraph_kwargs['fraction']>0 and subgraph_kwargs['fraction']<1
+    assert subgraph_kwargs['method'] in ['random','khop','random_walk_with_restart']
     if subgraph_kwargs['method']=='khop':
         khop_kwargs = subgraph_kwargs['khop_kwargs']
-        assert set(list(khop_kwargs.keys()))=={'autoChooseSubGs','nodeIndices','numHops','max_degree','pNodes'}
+        assert set(list(khop_kwargs.keys()))=={'autoChooseSubGs','nodeIndices','numHops','max_degree'}
         assert isinstance(khop_kwargs['autoChooseSubGs'], bool)
         if khop_kwargs['autoChooseSubGs']==False:
             assert khop_kwargs['nodeIndices'] is not None
         assert isinstance(khop_kwargs['numHops'],int)
         assert isinstance(khop_kwargs['max_degree'],int)
-        assert khop_kwargs['pNodes']>0 and khop_kwargs['pNodes']<1 and isinstance(khop_kwargs['pNodes'], (int, float, complex, np.integer, np.floating))
-    elif subgraph_kwargs['method']=='random':
-        random_kwargs = subgraph_kwargs['random_kwargs']
-        assert set(list(random_kwargs.keys()))=={'fraction','numSubgraphs'}
-        assert random_kwargs['fraction']>0 and random_kwargs['fraction']<1
-        assert isinstance(random_kwargs['numSubgraphs'],int)
+    # elif subgraph_kwargs['method']=='random':
+        # random_kwargs = subgraph_kwargs['random_kwargs']
+    elif subgraph_kwargs['method']=='random_walk_with_restart':
+        rwr_kwargs = subgraph_kwargs['rwr_kwargs']                       
+        assert set(list(rwr_kwargs.keys()))=={'restart_prob','max_steps'}
+        assert isinstance(rwr_kwargs['restart_prob'],(int,float,np.integer,np.floating))
+        assert rwr_kwargs['restart_prob']>=0 and rwr_kwargs['restart_prob']<=1
+        assert isinstance(rwr_kwargs['max_steps'],(int))
 
 def validate_augment_kwargs(augment_kwargs):
     for k in augment_kwargs.keys():
         assert isinstance(augment_kwargs[k]['use'],bool)
         if k in ['nodeDrop','nodeFeatMask','edgeDrop']:
             assert set(list(augment_kwargs[k].keys()))=={'use','p'}
-            assert augment_kwargs[k]['p'] >= 0 and augment_kwargs[k]['p'] <= 1 and isinstance(augment_kwargs[k]['p'], (int, float, complex, np.integer, np.floating))
+            assert augment_kwargs[k]['p'] >= 0 and augment_kwargs[k]['p'] <= 1 and isinstance(augment_kwargs[k]['p'], (int, float, np.integer, np.floating))
         elif k=='nodeMixUp':
             assert set(list(augment_kwargs[k].keys()))=={'use','lambda'}
             assert isinstance(augment_kwargs[k]['lambda'],int) or isinstance(augment_kwargs[k]['lambda'],float)
 
 def validate_watermark_kwargs(watermark_kwargs):
     assert set(list(watermark_kwargs.keys()))=={'coefWmk', 'pGraphs', 'clf_only_epochs', 'watermark_type', 'basic_selection_kwargs', 'fancy_selection_kwargs'}
-    assert watermark_kwargs['coefWmk']>0 and isinstance(watermark_kwargs['coefWmk'], (int, float, complex, np.integer, np.floating))
+    assert watermark_kwargs['coefWmk']>0 and isinstance(watermark_kwargs['coefWmk'], (int, float, np.integer, np.floating))
     assert isinstance(watermark_kwargs['clf_only_epochs'],int)
     assert watermark_kwargs['watermark_type'] in ['fancy','basic']
     if watermark_kwargs['watermark_type']=='basic':
         assert set(list(watermark_kwargs['watermark_type']['basic_selection_kwargs'].keys()))=={'p_remove'}
-        assert isinstance(watermark_kwargs['watermark_type']['basic_selection_kwargs'], (int, float, complex, np.integer, np.floating))
+        assert isinstance(watermark_kwargs['watermark_type']['basic_selection_kwargs'], (int, float, np.integer, np.floating))
     if watermark_kwargs['watermark_type']=='fancy':
         assert watermark_kwargs['fancy_selection_kwargs']['percent_of_features_to_watermark'] >= 0 and watermark_kwargs['fancy_selection_kwargs']['percent_of_features_to_watermark'] <= 100 and isinstance(watermark_kwargs['fancy_selection_kwargs']['percent_of_features_to_watermark'], (int, float, complex, np.integer, np.floating))
         assert set(list(watermark_kwargs['fancy_selection_kwargs'].keys()))=={'percent_of_features_to_watermark', 'evaluate_individually', 'selection_strategy', 'multi_subg_strategy'}
@@ -213,8 +242,23 @@ def validate_watermark_kwargs(watermark_kwargs):
         if watermark_kwargs['fancy_selection_kwargs']['evaluate_individually']==False and watermark_kwargs['fancy_selection_kwargs']['selection_strategy']!='random':
             assert watermark_kwargs['fancy_selection_kwargs']['multi_subg_strategy'] in ['concat','average']
 
-def validate_kwargs(node_classifier_kwargs, subgraph_kwargs, augment_kwargs, watermark_kwargs):
+
+
+def validate_watermark_loss_kwargs(watermark_loss_kwargs):
+    assert isinstance(watermark_loss_kwargs['epsilon'],(int, float, np.integer, np.floating))
+    assert watermark_loss_kwargs['epsilon']>=0
+    assert watermark_loss_kwargs['scale_beta_method'] in [None, 'tanh','tan','clip']
+    if watermark_loss_kwargs['scale_beta_method'] in ['tanh','tan']:
+        assert isinstance(watermark_loss_kwargs['alpha'],(int, float, np.integer, np.floating))
+        assert watermark_loss_kwargs['alpha']>=0
+    assert watermark_loss_kwargs['regularization_type'] in [None, 'L2','beta_var']
+    if watermark_loss_kwargs['regularization_type']=='L2':
+        assert isinstance(watermark_loss_kwargs['lambda_l2'],(int, float, np.integer, np.floating))
+        assert watermark_loss_kwargs['lambda_l2']>=0
+
+def validate_kwargs(node_classifier_kwargs, subgraph_kwargs, augment_kwargs, watermark_kwargs, watermark_loss_kwargs):
     validate_node_classifier_kwargs(node_classifier_kwargs)
     validate_subgraph_kwargs(subgraph_kwargs)
     validate_augment_kwargs(augment_kwargs)
     validate_watermark_kwargs(watermark_kwargs)
+    validate_watermark_loss_kwargs(watermark_loss_kwargs)
