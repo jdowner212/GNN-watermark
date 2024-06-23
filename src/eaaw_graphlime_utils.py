@@ -163,7 +163,7 @@ def get_masked_subgraph_nodes(data, central_node, hops=2, mask=None):
 
 
 
-def create_khop_subgraph(data, dataset_name, central_node, numHops, max_num_nodes, use_train_mask, avoid_nodes, normalize_features_):
+def create_khop_subgraph(data, dataset_name, central_node, numHops, max_num_nodes, use_train_mask, avoid_nodes):
     if dataset_name in ['CORA','CiteSeer','PubMed','Reddit','Reddit2','CS','Flickr','computers','photo']:
         mask = torch.tensor([True]*len(data.x)) # initially, "mask" blocks nothing
         if use_train_mask is True:
@@ -176,13 +176,10 @@ def create_khop_subgraph(data, dataset_name, central_node, numHops, max_num_node
         subgraph_node_idx, subgraph_edge_idx, _, _ = k_hop_subgraph(subgraph_node_idx, 0, edge_index=data.edge_index, num_nodes=data.num_nodes, relabel_nodes=True)
     elif dataset_name=='PPI':
         subgraph_node_idx, subgraph_edge_idx, _, _ = k_hop_subgraph(central_node, numHops, edge_index=data.edge_index, num_nodes=data.num_nodes, relabel_nodes=True)
-    x=data.x[subgraph_node_idx]
-    if normalize_features_==True:
-        x = normalize_features(x)
-    data_sub = Data(x, edge_index=subgraph_edge_idx, y=data.y[subgraph_node_idx])
+    data_sub = Data(x=data.x[subgraph_node_idx], edge_index=subgraph_edge_idx, y=data.y[subgraph_node_idx])
     return data_sub, subgraph_node_idx
 
-def create_random_subgraph(data, subgraph_size, mask=None, avoid_nodes=None, verbose=True, normalize_features_=False):
+def create_random_subgraph(data, subgraph_size, mask=None, avoid_nodes=None, verbose=True):
         num_nodes = data.num_nodes
         num_selected_nodes = subgraph_size
         nodes_random_order = torch.randperm(num_nodes)
@@ -195,11 +192,8 @@ def create_random_subgraph(data, subgraph_size, mask=None, avoid_nodes=None, ver
             print('selected_nodes:',selected_nodes)
 
         sub_edge_index, _ = subgraph(selected_nodes, data.edge_index, relabel_nodes=True, num_nodes=num_nodes)
-        x = data.x[selected_nodes] if data.x is not None else None
-        if normalize_features_==True:
-            x = normalize_features(x)
         sub_data = Data(
-            x=x,
+            x=data.x[selected_nodes] if data.x is not None else None,
             edge_index=sub_edge_index,
             y=data.y[selected_nodes] if data.y is not None else None,
             train_mask=data.train_mask[selected_nodes] if data.train_mask is not None else None,
@@ -208,7 +202,7 @@ def create_random_subgraph(data, subgraph_size, mask=None, avoid_nodes=None, ver
         return sub_data, selected_nodes
 
 
-def create_rwr_subgraph(data, start_node, restart_prob=0.15, subgraph_size=50, max_steps=1000, mask=None, avoid_nodes=None, normalize_features_ = False):
+def create_rwr_subgraph(data, start_node, restart_prob=0.15, subgraph_size=50, max_steps=1000, mask=None, avoid_nodes=None):
     G = to_networkx(data, to_undirected=True)
     subgraph_nodes = set([start_node])
     current_node = start_node
@@ -229,11 +223,8 @@ def create_rwr_subgraph(data, start_node, restart_prob=0.15, subgraph_size=50, m
 
     subgraph_node_idx = torch.tensor(list(subgraph_nodes))
     sub_edge_index, _ = subgraph(subgraph_node_idx, data.edge_index, relabel_nodes=True, num_nodes=data.num_nodes)
-    x=data.x[subgraph_node_idx] if data.x is not None else None
-    if normalize_features_==True:
-        x = normalize_features(x)
     sub_data = Data(
-        x=x,
+        x=data.x[subgraph_node_idx] if data.x is not None else None,
         edge_index=sub_edge_index,
         y=data.y[subgraph_node_idx] if data.y is not None else None,
         train_mask=data.train_mask[subgraph_node_idx] if data.train_mask is not None else None,
@@ -248,7 +239,6 @@ def generate_subgraph(data, dataset_name, kwargs, central_node=None, avoid_nodes
     data = copy.deepcopy(data)
     numSubgraphs = kwargs['numSubgraphs']
     fraction      = kwargs['fraction']
-    normalize_features_ = kwargs['normalize_features']
         
     if kwargs['method']=='khop':
         assert central_node is not None
@@ -259,12 +249,12 @@ def generate_subgraph(data, dataset_name, kwargs, central_node=None, avoid_nodes
         if central_node is None:
             ranked_node_indices = rank_training_nodes_by_degree(dataset_name, data, max_degree)
             central_node = ranked_node_indices[0]
-        data_sub, subgraph_node_idx = create_khop_subgraph(data, dataset_name, central_node, numHops, max_num_nodes, use_train_mask, avoid_nodes, normalize_features_)
+        data_sub, subgraph_node_idx = create_khop_subgraph(data, dataset_name, central_node, numHops, max_num_nodes, use_train_mask, avoid_nodes)
         subgraph_signature = central_node
     elif kwargs['method']=='random':
         num_watermarked_nodes = int(fraction*(data.x.shape[0]))
         subgraph_size = int(num_watermarked_nodes/numSubgraphs)
-        data_sub, subgraph_node_idx = create_random_subgraph(data, subgraph_size, data.train_mask, avoid_nodes, normalize_features_=normalize_features_)
+        data_sub, subgraph_node_idx = create_random_subgraph(data, subgraph_size, data.train_mask, avoid_nodes)
         subgraph_signature = '_'.join([str(s) for s in subgraph_node_idx.tolist()])
     elif kwargs['method']=='random_walk_with_restart':
         assert central_node is not None
@@ -439,6 +429,10 @@ def get_subgraph_tag(subgraph_kwargs, dataset_name):
     return subgraph_tag
 
 
+def update_dict(dict_,keys,values):
+    for k,v in zip(keys,values):
+        dict_[k]=v
+    return dict_
 
 
 def collect_subgraphs_within_single_graph_for_watermarking(data, dataset_name, use_train_mask, subgraph_kwargs):
@@ -462,9 +456,12 @@ def collect_subgraphs_within_single_graph_for_watermarking(data, dataset_name, u
     numSubgraphs = subgraph_kwargs['numSubgraphs']
 
 
-    try:
-        subgraph_dict = pickle.load(open(these_subgraphs_filepath,'rb'))
-    except:
+    if subgraph_kwargs['regenerate']==False:
+        try:
+            subgraph_dict = pickle.load(open(these_subgraphs_filepath,'rb'))
+        except:
+            subgraph_kwargs['regenerate']==True
+    if subgraph_kwargs['regenerate']==True:
         if subgraph_kwargs['method']=='khop':
             ''' this method relies on node_indices_to_watermark '''
             node_indices_to_watermark = get_node_indices_to_watermark(dataset_name, data, subgraph_kwargs)
@@ -494,26 +491,7 @@ def collect_subgraphs_within_single_graph_for_watermarking(data, dataset_name, u
             data_sub, subgraph_signature, subgraph_node_indices = generate_subgraph(data, dataset_name, subgraph_kwargs, central_node, avoid_indices, use_train_mask, show=False)
             subgraph_dict[subgraph_signature] = {'subgraph': data_sub, 'nodeIndices': subgraph_node_indices}
             seen_nodes += subgraph_node_indices.tolist()
-# ###
 
-#         subgraphs = [subgraph_dict[subgraph_sig]['subgraph'] for subgraph_sig in subgraph_dict.keys()]
-#         original_values = [subgraph.x.clone() for subgraph in subgraphs]
-#         all_features = torch.cat([subgraph.x for subgraph in subgraphs], dim=0)
-#         global_min = all_features.min(dim=0, keepdim=True)
-#         global_max = all_features.max(dim=0, keepdim=True)
-#         for subgraph in subgraphs:
-#             subgraph.x = (subgraph.x - global_min) / (global_max-global_min)
-
-#         # Checking if values have changed
-#         for i, (original, normalized) in enumerate(zip(original_values, subgraphs)):
-#             if not torch.equal(original, normalized.x):
-#                 print(f"Data object {i + 1} has been successfully normalized.")
-#             else:
-#                 print(f"Data object {i + 1} has not changed.")
-
-
-
-# ###
         with open(these_subgraphs_filepath,'wb') as f:
             pickle.dump(subgraph_dict, f)
 
@@ -972,7 +950,8 @@ def optimize_watermark(loss_watermark, beta_similarity, x_sub, y_sub, this_water
                        epoch_condition, ignore_zeros_from_subgraphs=False, 
                        #scale_beta_method='clip', 
                        debug=False,
-                       watermark_loss_kwargs={}):
+                       watermark_loss_kwargs={},
+                       balanced_beta_weights=None):
     
 
 
@@ -984,7 +963,9 @@ def optimize_watermark(loss_watermark, beta_similarity, x_sub, y_sub, this_water
 
     B_x_W = (beta*this_watermark).clone()
     B_x_W = B_x_W[not_omit_indices]
-    this_loss_watermark = torch.mean(torch.clamp(watermark_loss_kwargs['epsilon']-B_x_W, min=0))
+    balanced_beta_weights = balanced_beta_weights[not_omit_indices]
+
+    this_loss_watermark = torch.mean(torch.clamp(watermark_loss_kwargs['epsilon']-B_x_W, min=0)*balanced_beta_weights)
     this_beta_similarity = torch.mean(B_x_W)
     loss_watermark  += this_loss_watermark
     beta_similarity += this_beta_similarity
@@ -1016,13 +997,40 @@ def normalize_features(features):
     return normalized_features
 
 
+def compute_feature_variability_weights(data_objects):
+    variablities = []
+    for data_obj in data_objects:
+        std_devs = data_obj.x.std(dim=0)
+        variablity = std_devs#.mean()
+        variablities.append(variablity)
+    variablities = torch.vstack(variablities)
+    weights = 1 / (variablities + 1e-10)
+    return weights
+
+def compute_overall_feature_representation(population_features):
+    overall_feature_sums = population_features.sum(dim=0)
+    overall_feature_representations = overall_feature_sums / overall_feature_sums.sum()
+    return overall_feature_representations
+
+def compute_subgraph_feature_representation(x_sub):
+    subgraph_feature_sums = x_sub.sum(dim=0)
+    subgraph_feature_representations = subgraph_feature_sums / subgraph_feature_sums.sum()
+    return subgraph_feature_representations
+
+def compute_balanced_feature_weights(overall_representations, subgraph_representations):
+    weights = overall_representations / (subgraph_representations + 1e-10)
+    return weights
+
+
+def get_balanced_beta_weights(subgraphs):
+    all_subgraph_features = torch.vstack([subgraph.x for subgraph in subgraphs])
+    overall_feature_representations = compute_overall_feature_representation(all_subgraph_features)
+    subgraph_feature_representations = torch.vstack([compute_subgraph_feature_representation(subgraph.x) for subgraph in subgraphs])
+    balanced_weights = compute_balanced_feature_weights(overall_feature_representations, subgraph_feature_representations)
+    return balanced_weights
+
+
 def train(data, dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs,
-          #epsilon,
-          #alpha=1e3, 
-          #scale_beta_method='clip', 
-          #regularization_type=None,
-          #lambda_l2 = 0.001,
-          #augment_subgraphs=False,
           debug_multiple_subgraphs=True, 
           save=True
           ):
@@ -1038,6 +1046,13 @@ def train(data, dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwar
     subgraph_dict, subgraph_signatures          = setup_subgraph_dict(data, dataset_name, subgraph_kwargs, watermark_kwargs)
     node_aug, edge_aug                          = collect_augmentations(augment_kwargs, node_classifier_kwargs['outDim'])
     history, betas_dict, beta_similarities_dict = setup_history(subgraph_signatures)
+
+    if watermark_loss_kwargs['balance_beta_weights'] == True:
+        balanced_weights = get_balanced_beta_weights([subgraph_dict[sig]['subgraph'] for sig in subgraph_signatures])
+    elif watermark_loss_kwargs['balance_beta_weights'] == False:
+        balanced_weights = torch.ones(len(subgraph_dict),data.x.shape[1])
+
+
 
     all_feature_importances, all_watermark_indices, coef_wmk = None, None, watermark_kwargs['coefWmk']
     # beta = torch.zeros(data.x.shape[1],dtype=torch.float)
@@ -1067,8 +1082,10 @@ def train(data, dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwar
                 ''' Define watermark at subset of feature indices. If `False`, then watermark was previously-defined. '''
                 subgraph_dict, all_watermark_indices, all_feature_importances = apply_fancy_watermark(data, subgraph_dict, probas, watermark_kwargs)
 
+
+
             betas_from_every_subgraph = []
-            for sig in subgraph_signatures:
+            for s, sig in enumerate(subgraph_signatures):
                 this_watermark, data_sub, subgraph_node_indices = [subgraph_dict[sig][k] for k in ['watermark','subgraph','nodeIndices']]
 
                 x_sub = data_sub.x
@@ -1078,11 +1095,11 @@ def train(data, dataset_name, lr, epochs, node_classifier_kwargs, watermark_kwar
 
                 loss_watermark, beta_similarity, betas_dict, beta_similarities_dict = optimize_watermark(loss_watermark, beta_similarity, x_sub, y_sub, this_watermark, betas_dict, 
                                                                                                          beta_similarities_dict, sig, 
-                                                                                                         #alpha, epsilon, 
-                                                                                                         epoch==epochs-1, ignore_zeros_from_subgraphs=False, 
-                                                                                                         #scale_beta_method=scale_beta_method, 
+                                                                                                         epoch==epochs-1, 
+                                                                                                         ignore_zeros_from_subgraphs=False, 
                                                                                                          debug=debug_multiple_subgraphs,
-                                                                                                         watermark_loss_kwargs=watermark_loss_kwargs)
+                                                                                                         watermark_loss_kwargs=watermark_loss_kwargs,
+                                                                                                         balanced_beta_weights=balanced_weights[s])
                 betas_from_every_subgraph.append(betas_dict[sig][-1])
             betas_from_every_subgraph = torch.vstack(betas_from_every_subgraph)
 

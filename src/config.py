@@ -96,10 +96,10 @@ def get_presets(dataset, dataset_name):
                                     }
         
 
-        subgraph_kwargs         =   {'method': 'random',
+        subgraph_kwargs         =   {'regenerate': False,
+                                     'method': 'random',
                                      'fraction':0.003,
                                      'numSubgraphs': 1,
-                                     'normalize_features':False, 
                                      'khop_kwargs':   {'autoChooseSubGs': True,   'nodeIndices':  None,   'numHops': 1,   'max_degree': 50},
                                      'random_kwargs': {},
                                      'rwr_kwargs': {'restart_prob':0.15, 'max_steps':1000}
@@ -107,6 +107,7 @@ def get_presets(dataset, dataset_name):
         
         watermark_loss_kwargs = {'epsilon': 0.001,
                                  'scale_beta_method': None,
+                                 'balance_beta_weights':False,
                                  'alpha': None,
                                  'regularization_type': None,
                                  'lambda_l2': 0.01}
@@ -137,15 +138,16 @@ def get_presets(dataset, dataset_name):
                                                         }} 
 
         watermark_loss_kwargs = {'epsilon': 0.001,
+                                 'balance_beta_weights':False,
                                  'scale_beta_method': None,
                                  'alpha': None,
                                  'regularization_type': None,
                                  'lambda_l2': 0.01}
 
-        subgraph_kwargs         =   {'method': 'random',  
+        subgraph_kwargs         =   {'regenerate':False,
+                                     'method': 'random',  
                                      'fraction': 0.003,
                                      'numSubgraphs': 1,
-                                     'normalize_features':False, 
                                      'khop_kwargs':   {'autoChooseSubGs': True,   'nodeIndices':  None,   'numHops': 1,   'max_degree': 50},
                                      'random_kwargs': {},
                                      'rwr_kwargs': {'restart_prob':0.15, 'max_steps':1000},
@@ -193,10 +195,10 @@ def validate_node_classifier_kwargs(node_classifier_kwargs):
     assert isinstance(node_classifier_kwargs['skip_connections'],bool)
 
 def validate_subgraph_kwargs(subgraph_kwargs):
-    assert set(list(subgraph_kwargs.keys()))=={'method','numSubgraphs','fraction','normalize_features', 'khop_kwargs','random_kwargs','rwr_kwargs'}
+    assert set(list(subgraph_kwargs.keys()))=={'regenerate','method','numSubgraphs','fraction', 'khop_kwargs','random_kwargs','rwr_kwargs'}
+    assert isinstance(subgraph_kwargs['regenerate'],bool)
     assert isinstance(subgraph_kwargs['numSubgraphs'],int)
     assert isinstance(subgraph_kwargs['fraction'], (int, float, np.integer, np.floating))
-    assert isinstance(subgraph_kwargs['normalize_features'], bool)
     assert subgraph_kwargs['fraction']>0 and subgraph_kwargs['fraction']<1
     assert subgraph_kwargs['method'] in ['random','khop','random_walk_with_restart']
     if subgraph_kwargs['method']=='khop':
@@ -207,8 +209,6 @@ def validate_subgraph_kwargs(subgraph_kwargs):
             assert khop_kwargs['nodeIndices'] is not None
         assert isinstance(khop_kwargs['numHops'],int)
         assert isinstance(khop_kwargs['max_degree'],int)
-    # elif subgraph_kwargs['method']=='random':
-        # random_kwargs = subgraph_kwargs['random_kwargs']
     elif subgraph_kwargs['method']=='random_walk_with_restart':
         rwr_kwargs = subgraph_kwargs['rwr_kwargs']                       
         assert set(list(rwr_kwargs.keys()))=={'restart_prob','max_steps'}
@@ -243,8 +243,9 @@ def validate_watermark_kwargs(watermark_kwargs):
             assert watermark_kwargs['fancy_selection_kwargs']['multi_subg_strategy'] in ['concat','average']
 
 
-
 def validate_watermark_loss_kwargs(watermark_loss_kwargs):
+    assert set(list(watermark_loss_kwargs.keys()))=={'epsilon','balance_beta_weights','scale_beta_method','alpha','regularization_type','lambda_l2'}
+    assert(isinstance(watermark_loss_kwargs['balance_beta_weights'],bool))
     assert isinstance(watermark_loss_kwargs['epsilon'],(int, float, np.integer, np.floating))
     assert watermark_loss_kwargs['epsilon']>=0
     assert watermark_loss_kwargs['scale_beta_method'] in [None, 'tanh','tan','clip']
