@@ -75,8 +75,8 @@ dataset_attributes = {
 
 def get_presets(dataset, dataset_name):
     if dataset_name=='default':
-        lr=0.01
-        epochs=200
+
+        training_kwargs = {'lr':0.01, 'epochs': 200}
 
         node_classifier_kwargs  = {'arch': 'SAGE',  'activation': 'elu',        'nLayers':3,    'hDim':256, 
                                    'dropout': 0,    'skip_connections':True,    'heads_1':8,    'heads_2':1,    
@@ -85,10 +85,10 @@ def get_presets(dataset, dataset_name):
 
         watermark_kwargs        = {'coefWmk': 1, 
                                     'pGraphs': 1, 
-                                    'clf_only_epochs':100, 
                                     'watermark_type':'fancy',
                                     'basic_selection_kwargs': {'p_remove':0.75},
                                     'fancy_selection_kwargs': {'percent_of_features_to_watermark':100,
+                                                               'clf_only_epochs':100, 
                                                          'evaluate_individually':False,
                                                          'selection_strategy': 'unimportant',
                                                          'multi_subg_strategy': 'average'
@@ -105,6 +105,8 @@ def get_presets(dataset, dataset_name):
                                      'rwr_kwargs': {'restart_prob':0.15, 'max_steps':1000}
                                     }
         
+        regression_kwargs = {'lambda': 0.1}
+
         watermark_loss_kwargs = {'epsilon': 0.001,
                                  'scale_beta_method': None,
                                  'balance_beta_weights':False,
@@ -118,8 +120,8 @@ def get_presets(dataset, dataset_name):
                           'edgeDrop':{'use':True,'p':0.9}}
 
     elif dataset_name=='Flickr':
-        lr=0.01
-        epochs=200
+        training_kwargs['lr']=0.01
+        training_kwargs['epochs']=200
 
         node_classifier_kwargs  = {'arch': 'SAGE',  'activation': 'elu',        'nLayers':3,    'hDim':256, 
                                    'dropout': 0,    'skip_connections':True,    'heads_1':8,    'heads_2':1,    
@@ -128,10 +130,10 @@ def get_presets(dataset, dataset_name):
 
         watermark_kwargs        = {'coefWmk': 1, 
                                    'pGraphs': 1, 
-                                   'clf_only_epochs':100, 
-                                    'watermark_type':'basic',
+                                    'watermark_type':'fancy',
                                     'basic_selection_kwargs': {'p_remove':0.75},
                                     'fancy_selection_kwargs': {'percent_of_features_to_watermark':100,
+                                                            'clf_only_epochs':100, 
                                                          'evaluate_individually':False,
                                                          'selection_strategy': 'unimportant',
                                                          'multi_subg_strategy': 'average'
@@ -162,8 +164,8 @@ def get_presets(dataset, dataset_name):
         
     
     elif dataset_name=='photo':
-        lr= 0.001
-        epochs=100
+        training_kwargs['lr']=0.001
+        training_kwargs['epochs']=100
 
         node_classifier_kwargs['arch']='GCN'
         node_classifier_kwargs['hDim']=256
@@ -176,13 +178,23 @@ def get_presets(dataset, dataset_name):
         subgraph_kwargs['fraction']=0.005
 
 
-    assert watermark_kwargs['clf_only_epochs']<=epochs
+    assert watermark_kwargs['fancy_selection_kwargs']['clf_only_epochs']<=training_kwargs['epochs']
 
-    return lr, epochs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs
-
-
+    return training_kwargs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs, regression_kwargs
 
 
+
+def validate_regression_kwargs(regression_kwargs):
+    assert set(list(regression_kwargs.keys()))=={'lambda'}
+    assert isinstance(regression_kwargs['lambda'],(int,float,np.integer,np.floating))
+    assert regression_kwargs['lambda']>=0
+
+def validate_training_kwargs(training_kwargs):
+    assert set(list(training_kwargs.keys()))=={'lr','epochs'}
+    assert isinstance(training_kwargs['lr'],(int, float, np.integer, np.floating))
+    assert isinstance(training_kwargs['epochs'],int)
+    assert training_kwargs['epochs']>=0
+    assert training_kwargs['lr']>=0
 
 
 def validate_node_classifier_kwargs(node_classifier_kwargs):
@@ -227,16 +239,16 @@ def validate_augment_kwargs(augment_kwargs):
             assert isinstance(augment_kwargs[k]['lambda'],int) or isinstance(augment_kwargs[k]['lambda'],float)
 
 def validate_watermark_kwargs(watermark_kwargs):
-    assert set(list(watermark_kwargs.keys()))=={'coefWmk', 'pGraphs', 'clf_only_epochs', 'watermark_type', 'basic_selection_kwargs', 'fancy_selection_kwargs'}
+    assert set(list(watermark_kwargs.keys()))=={'coefWmk', 'pGraphs', 'watermark_type', 'basic_selection_kwargs', 'fancy_selection_kwargs'}
     assert watermark_kwargs['coefWmk']>0 and isinstance(watermark_kwargs['coefWmk'], (int, float, np.integer, np.floating))
-    assert isinstance(watermark_kwargs['clf_only_epochs'],int)
     assert watermark_kwargs['watermark_type'] in ['fancy','basic']
     if watermark_kwargs['watermark_type']=='basic':
         assert set(list(watermark_kwargs['watermark_type']['basic_selection_kwargs'].keys()))=={'p_remove'}
         assert isinstance(watermark_kwargs['watermark_type']['basic_selection_kwargs'], (int, float, np.integer, np.floating))
     if watermark_kwargs['watermark_type']=='fancy':
+        assert set(list(watermark_kwargs['fancy_selection_kwargs'].keys()))=={'percent_of_features_to_watermark', 'clf_only_epochs', 'evaluate_individually', 'selection_strategy', 'multi_subg_strategy'}
         assert watermark_kwargs['fancy_selection_kwargs']['percent_of_features_to_watermark'] >= 0 and watermark_kwargs['fancy_selection_kwargs']['percent_of_features_to_watermark'] <= 100 and isinstance(watermark_kwargs['fancy_selection_kwargs']['percent_of_features_to_watermark'], (int, float, complex, np.integer, np.floating))
-        assert set(list(watermark_kwargs['fancy_selection_kwargs'].keys()))=={'percent_of_features_to_watermark', 'evaluate_individually', 'selection_strategy', 'multi_subg_strategy'}
+        assert isinstance(watermark_kwargs['fancy_selection_kwargs']['clf_only_epochs'],int) and watermark_kwargs['fancy_selection_kwargs']['clf_only_epochs']>=0
         assert isinstance(watermark_kwargs['fancy_selection_kwargs']['evaluate_individually'],bool)
         assert watermark_kwargs['fancy_selection_kwargs']['selection_strategy'] in ['unimportant','random']
         if watermark_kwargs['fancy_selection_kwargs']['evaluate_individually']==False and watermark_kwargs['fancy_selection_kwargs']['selection_strategy']!='random':
@@ -257,7 +269,9 @@ def validate_watermark_loss_kwargs(watermark_loss_kwargs):
         assert isinstance(watermark_loss_kwargs['lambda_l2'],(int, float, np.integer, np.floating))
         assert watermark_loss_kwargs['lambda_l2']>=0
 
-def validate_kwargs(node_classifier_kwargs, subgraph_kwargs, augment_kwargs, watermark_kwargs, watermark_loss_kwargs):
+def validate_kwargs(training_kwargs, node_classifier_kwargs, subgraph_kwargs, augment_kwargs, watermark_kwargs, watermark_loss_kwargs, regression_kwargs):
+    validate_regression_kwargs(regression_kwargs)
+    validate_training_kwargs(training_kwargs)
     validate_node_classifier_kwargs(node_classifier_kwargs)
     validate_subgraph_kwargs(subgraph_kwargs)
     validate_augment_kwargs(augment_kwargs)
