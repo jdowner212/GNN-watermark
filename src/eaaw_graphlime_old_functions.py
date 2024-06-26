@@ -21,6 +21,14 @@ from torchviz import make_dot
 from torch_geometric.utils import k_hop_subgraph
 import os
 
+
+from config import *
+from general_utils import *
+from models import *
+from subgraph_utils import *
+from transform_functions import *
+from watermark_utils import *
+
 class HSICLasso(nn.Module):
     def __init__(self, sigma_x, sigma_y, rho, feature_dim):
         super(HSICLasso, self).__init__()
@@ -221,3 +229,25 @@ def compute_normalized_centered_gram_matrix(x, reduce):
     G_norm = torch.norm(G, p='fro', dim=(0, 1), keepdim=True) + 1e-10
     G = G / G_norm
     return G
+
+def get_complement_subgraph(data, subgraph_dict):
+    all_node_indices = torch.cat([subgraph_dict[k]['nodeIndices'] for k in subgraph_dict]).tolist()
+    complement_indices = torch.tensor([i for i in range(len(data.x)) if i not in all_node_indices])
+
+    num_nodes = data.num_nodes
+    comp_sub_edge_index, _ = subgraph(complement_indices, data.edge_index, relabel_nodes=True, num_nodes=num_nodes)
+    data_comp_sub = Data(
+        x=data.x[complement_indices] if data.x is not None else None,
+        edge_index=comp_sub_edge_index,
+        y=data.y[complement_indices] if data.y is not None else None,
+        train_mask=data.train_mask[complement_indices] if data.train_mask is not None else None,
+        test_mask=data.test_mask[complement_indices] if data.test_mask is not None else None,
+        val_mask=data.val_mask[complement_indices] if data.val_mask is not None else None,
+    )
+    return data_comp_sub, complement_indices
+
+def normalize_features(features):
+    mean = features.mean(dim=0, keepdim=True)
+    std = features.std(dim=0, keepdim=True) + 1e-10  # to avoid division by zero
+    normalized_features = (features - mean) / std
+    return normalized_features
