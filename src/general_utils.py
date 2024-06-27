@@ -32,7 +32,9 @@ def count_matches(features):
             num_matches += 1
     return num_matches
 
-def describe_selection_config(data, watermark_kwargs, subgraph_dict):
+def describe_selection_config(#data, 
+                              num_features,
+                              watermark_kwargs, subgraph_dict):
     use_unimpt  = watermark_kwargs['fancy_selection_kwargs']['selection_strategy']=='unimportant'
     use_rand    = watermark_kwargs['fancy_selection_kwargs']['selection_strategy']=='random'
     use_concat  = watermark_kwargs['fancy_selection_kwargs']['multi_subg_strategy']=='concat'
@@ -41,7 +43,7 @@ def describe_selection_config(data, watermark_kwargs, subgraph_dict):
     
     num_subgraphs=len(subgraph_dict)
     perc        = watermark_kwargs['fancy_selection_kwargs']['percent_of_features_to_watermark']
-    num_indices = int(perc*data.x.shape[1]/100)
+    num_indices = int(perc*num_features/100)
 
     message=None
     end_tag = ', single subgraph' if num_subgraphs==1 else ', individualized for each subgraph' if (num_subgraphs>1 and use_indiv) else ', uniformly across subgraphs' if (num_subgraphs>1 and not use_indiv) else ''
@@ -246,4 +248,278 @@ def update_dict(dict_,keys,values):
 
 
 
+def merge_kwargs_dicts():
+    node_classifier_kwargs = config.node_classifier_kwargs
+    optimization_kwargs = config.optimization_kwargs
+    watermark_kwargs = config.watermark_kwargs
+    subgraph_kwargs = config.subgraph_kwargs
+    regression_kwargs = config.regression_kwargs
+    watermark_loss_kwargs = config.watermark_loss_kwargs
+    augment_kwargs = config.augment_kwargs
 
+    merged_dict = {}
+
+    # Add node_classifier_kwargs to merged_dict
+    for k, v in node_classifier_kwargs.items():
+        merged_dict[f"node_classifier_{k}"] = v
+    
+    # Add optimization_kwargs to merged_dict
+    for k, v in optimization_kwargs.items():
+        if isinstance(v, dict):
+            for sub_k, sub_v in v.items():
+                merged_dict[f"optimization_{k}_{sub_k}"] = sub_v
+        else:
+            merged_dict[f"optimization_{k}"] = v
+    
+    # Add watermark_kwargs to merged_dict
+    for k, v in watermark_kwargs.items():
+        if isinstance(v, dict):
+            for sub_k, sub_v in v.items():
+                merged_dict[f"watermark_{k}_{sub_k}"] = sub_v
+        else:
+            merged_dict[f"watermark_{k}"] = v
+    
+    # Add subgraph_kwargs to merged_dict
+    for k, v in subgraph_kwargs.items():
+        if isinstance(v, dict):
+            for sub_k, sub_v in v.items():
+                merged_dict[f"subgraph_{k}_{sub_k}"] = sub_v
+        else:
+            merged_dict[f"subgraph_{k}"] = v
+    
+    # Add regression_kwargs to merged_dict
+    for k, v in regression_kwargs.items():
+        merged_dict[f"regression_{k}"] = v
+    
+    # Add watermark_loss_kwargs to merged_dict
+    for k, v in watermark_loss_kwargs.items():
+        merged_dict[f"watermark_loss_{k}"] = v
+    
+    # Add augment_kwargs to merged_dict
+    for k, v in augment_kwargs.items():
+        if isinstance(v, dict):
+            for sub_k, sub_v in v.items():
+                merged_dict[f"augment_{k}_{sub_k}"] = sub_v
+        else:
+            merged_dict[f"augment_{k}"] = v
+    
+    return merged_dict
+
+
+# def dict_to_filename(node_classifier_kwargs, optimization_kwargs, watermark_kwargs, subgraph_kwargs, regression_kwargs, watermark_loss_kwargs, augment_kwargs):
+#     # Node Classifier
+#     arch = node_classifier_kwargs['arch']
+#     activation = node_classifier_kwargs['activation']
+#     nLayers = node_classifier_kwargs['nLayers']
+#     hDim = node_classifier_kwargs['hDim']
+#     dropout = node_classifier_kwargs['dropout']
+#     skip_connections = node_classifier_kwargs['skip_connections']
+#     heads_1 = node_classifier_kwargs['heads_1']
+#     heads_2 = node_classifier_kwargs['heads_2']
+#     inDim = node_classifier_kwargs['inDim']
+#     outDim = node_classifier_kwargs['outDim']
+#     node_classifier_str = f"{arch}_{activation}_{nLayers}-{hDim}_{dropout}_{skip_connections}-{heads_1}-{heads_2}-{inDim}-{outDim}"
+    
+#     # Optimization
+#     lr = optimization_kwargs['lr']
+#     epochs = optimization_kwargs['epochs']
+#     method = optimization_kwargs['sacrifice_kwargs']['method']
+#     percentage = optimization_kwargs['sacrifice_kwargs']['percentage']
+#     coefWmk = optimization_kwargs['coefWmk']
+#     regularization_type = optimization_kwargs['regularization_type']
+#     lambda_l2 = optimization_kwargs['lambda_l2']
+#     use_pcgrad = optimization_kwargs['use_pcgrad']
+#     optimization_str = f"{lr}-{epochs}-{method}-{percentage}-{coefWmk}-{regularization_type}-{lambda_l2}-{use_pcgrad}"
+    
+#     # Watermark
+#     pGraphs = watermark_kwargs['pGraphs']
+#     watermark_type = watermark_kwargs['watermark_type']
+#     if watermark_type == 'basic':
+#         p_remove = watermark_kwargs['basic_selection_kwargs']['p_remove']
+#         watermark_str = f"{pGraphs}_{watermark_type}-{p_remove}"
+#     else:
+#         percent_of_features_to_watermark = watermark_kwargs['fancy_selection_kwargs']['percent_of_features_to_watermark']
+#         clf_only_epochs = watermark_kwargs['fancy_selection_kwargs']['clf_only_epochs']
+#         evaluate_individually = watermark_kwargs['fancy_selection_kwargs']['evaluate_individually']
+#         selection_strategy = watermark_kwargs['fancy_selection_kwargs']['selection_strategy']
+#         multi_subg_strategy = watermark_kwargs['fancy_selection_kwargs']['multi_subg_strategy']
+#         watermark_str = f"{pGraphs}_{watermark_type}-{percent_of_features_to_watermark}-{clf_only_epochs}-{evaluate_individually}-{selection_strategy}-{multi_subg_strategy}"
+    
+#     # Subgraph
+#     regenerate = subgraph_kwargs['regenerate']
+#     method = subgraph_kwargs['method']
+#     fraction = subgraph_kwargs['fraction']
+#     numSubgraphs = subgraph_kwargs['numSubgraphs']
+#     if method == 'khop':
+#         autoChooseSubGs = subgraph_kwargs['khop_kwargs']['autoChooseSubGs']
+#         nodeIndices = subgraph_kwargs['khop_kwargs']['nodeIndices']
+#         numHops = subgraph_kwargs['khop_kwargs']['numHops']
+#         max_degree = subgraph_kwargs['khop_kwargs']['max_degree']
+#         subgraph_str = f"{regenerate}-{method}-{numSubgraphs}-{fraction}-{autoChooseSubGs}-{nodeIndices}-{numHops}-{max_degree}"
+#     elif method == 'random_walk_with_restart':
+#         restart_prob = subgraph_kwargs['rwr_kwargs']['restart_prob']
+#         max_steps = subgraph_kwargs['rwr_kwargs']['max_steps']
+#         subgraph_str = f"{regenerate}-{method}-{numSubgraphs}-{fraction}-{restart_prob}-{max_steps}"
+#     else:
+#         subgraph_str = f"{regenerate}-{method}-{numSubgraphs}-{fraction}"
+    
+#     # Regression
+#     lambda_regression = regression_kwargs['lambda']
+#     regression_str = f"{lambda_regression}"
+    
+#     # Watermark Loss
+#     epsilon = watermark_loss_kwargs['epsilon']
+#     scale_beta_method = watermark_loss_kwargs['scale_beta_method']
+#     balance_beta_weights = watermark_loss_kwargs['balance_beta_weights']
+#     alpha = watermark_loss_kwargs['alpha']
+#     watermark_loss_str = f"{epsilon}-{scale_beta_method}-{balance_beta_weights}-{alpha}"
+    
+#     # Augment
+#     nodeDrop_use = augment_kwargs['nodeDrop']['use']
+#     nodeDrop_p = augment_kwargs['nodeDrop']['p']
+#     nodeMixUp_use = augment_kwargs['nodeMixUp']['use']
+#     nodeMixUp_lambda = augment_kwargs['nodeMixUp']['lambda']
+#     nodeFeatMask_use = augment_kwargs['nodeFeatMask']['use']
+#     nodeFeatMask_p = augment_kwargs['nodeFeatMask']['p']
+#     edgeDrop_use = augment_kwargs['edgeDrop']['use']
+#     edgeDrop_p = augment_kwargs['edgeDrop']['p']
+#     augment_str = f"{nodeDrop_use}_{nodeDrop_p}-{nodeMixUp_use}_{nodeMixUp_lambda}-{nodeFeatMask_use}_{nodeFeatMask_p}-{edgeDrop_use}_{edgeDrop_p}"
+    
+#     filename = '|'.join([node_classifier_str, optimization_str, watermark_str, subgraph_str, regression_str, watermark_loss_str, augment_str])
+#     return filename
+
+
+# def filename_to_dict(filename):
+#     segments = filename.split('|')
+    
+#     # Node Classifier
+#     arch, activation, nLayers, hDim, dropout, skip_connections, heads_1, heads_2, inDim, outDim = segments[0].replace('-', '_').split('_')
+#     node_classifier_kwargs = {
+#         'arch': arch,
+#         'activation': activation,
+#         'nLayers': int(nLayers),
+#         'hDim': int(hDim),
+#         'dropout': float(dropout),
+#         'skip_connections': skip_connections == 'True',
+#         'heads_1': int(heads_1),
+#         'heads_2': int(heads_2),
+#         'inDim': int(inDim),
+#         'outDim': int(outDim)
+#     }
+    
+#     # Optimization
+#     lr, epochs, method, percentage, coefWmk, regularization_type, lambda_l2, use_pcgrad = segments[1].split('-')
+#     optimization_kwargs = {
+#         'lr': float(lr),
+#         'epochs': int(epochs),
+#         'sacrifice_kwargs': {
+#             'method': None if method == 'None' else method,
+#             'percentage': None if percentage == 'None' else float(percentage)
+#         },
+#         'coefWmk': float(coefWmk),
+#         'regularization_type': None if regularization_type == 'None' else regularization_type,
+#         'lambda_l2': None if lambda_l2 == 'None' else float(lambda_l2),
+#         'use_pcgrad': use_pcgrad == 'True'
+#     }
+    
+#     # Watermark
+#     # print('segments[2]:',segments[2])
+#     pGraphs, watermark_type = segments[2].split('-')[0].split('_')
+#     if watermark_type == 'basic':
+#         p_remove = segments[2].split('-')[2]
+#         watermark_kwargs = {
+#             'pGraphs': int(pGraphs),
+#             'watermark_type': watermark_type,
+#             'basic_selection_kwargs': {'p_remove': float(p_remove)}
+#         }
+#     else:
+#         percent_of_features_to_watermark, clf_only_epochs, evaluate_individually, selection_strategy, multi_subg_strategy = segments[2].split('-')[1:]
+#         watermark_kwargs = {
+#             'pGraphs': int(pGraphs),
+#             'watermark_type': watermark_type,
+#             'fancy_selection_kwargs': {
+#                 'percent_of_features_to_watermark': float(percent_of_features_to_watermark),
+#                 'clf_only_epochs': int(clf_only_epochs),
+#                 'evaluate_individually': evaluate_individually == 'True',
+#                 'selection_strategy': selection_strategy,
+#                 'multi_subg_strategy': multi_subg_strategy
+#             }
+#         }
+    
+#     # Subgraph
+#     print("subraph:",segments[3])
+#     #False_random_1-0.003
+#     subgraph_params = segments[3].split('-')
+#     regenerate = subgraph_params[0] == 'True'
+#     method = subgraph_params[1]
+#     numSubgraphs = int(subgraph_params[2])
+#     fraction = float(subgraph_params[3])
+#     if method == 'khop':
+#         autoChooseSubGs, nodeIndices, numHops, max_degree = subgraph_params[4:]
+#         subgraph_kwargs = {
+#             'regenerate': regenerate,
+#             'method': method,
+#             'fraction': fraction,
+#             'numSubgraphs': numSubgraphs,
+#             'khop_kwargs': {
+#                 'autoChooseSubGs': autoChooseSubGs == 'True',
+#                 'nodeIndices': None if nodeIndices == 'None' else nodeIndices,
+#                 'numHops': int(numHops),
+#                 'max_degree': int(max_degree)
+#             }
+#         }
+#     elif method == 'random_walk_with_restart':
+#         restart_prob, max_steps = subgraph_params[4:]
+#         subgraph_kwargs = {
+#             'regenerate': regenerate,
+#             'method': method,
+#             'fraction': fraction,
+#             'numSubgraphs': numSubgraphs,
+#             'rwr_kwargs': {
+#                 'restart_prob': float(restart_prob),
+#                 'max_steps': int(max_steps)
+#             }
+#         }
+#     else:
+#         subgraph_kwargs = {
+#             'regenerate': regenerate,
+#             'method': method,
+#             'fraction': fraction,
+#             'numSubgraphs': numSubgraphs
+#         }
+    
+#     # Regression
+#     lambda_regression = float(segments[4])
+#     regression_kwargs = {'lambda': lambda_regression}
+    
+#     # Watermark Loss
+#     epsilon, scale_beta_method, balance_beta_weights, alpha = segments[5].split('-')
+#     watermark_loss_kwargs = {
+#         'epsilon': float(epsilon),
+#         'scale_beta_method': None if scale_beta_method == 'None' else scale_beta_method,
+#         'balance_beta_weights': balance_beta_weights == 'True',
+#         'alpha': None if alpha == 'None' else float(alpha)
+#     }
+    
+#     # Augment
+#     augment_params = segments[6].split('-')
+#     nodeDrop_use, nodeDrop_p = augment_params[0].split('_')
+#     nodeMixUp_use, nodeMixUp_lambda = augment_params[1].split('_')
+#     nodeFeatMask_use, nodeFeatMask_p = augment_params[2].split('_')
+#     edgeDrop_use, edgeDrop_p = augment_params[3].split('_')
+#     augment_kwargs = {
+#         'nodeDrop': {'use': nodeDrop_use == 'True', 'p': float(nodeDrop_p)},
+#         'nodeMixUp': {'use': nodeMixUp_use == 'True', 'lambda': float(nodeMixUp_lambda)},
+#         'nodeFeatMask': {'use': nodeFeatMask_use == 'True', 'p': float(nodeFeatMask_p)},
+#         'edgeDrop': {'use': edgeDrop_use == 'True', 'p': float(edgeDrop_p)}
+#     }
+    
+#     return {
+#         'node_classifier_kwargs': node_classifier_kwargs,
+#         'optimization_kwargs': optimization_kwargs,
+#         'watermark_kwargs': watermark_kwargs,
+#         'subgraph_kwargs': subgraph_kwargs,
+#         'regression_kwargs': regression_kwargs,
+#         'watermark_loss_kwargs': watermark_loss_kwargs,
+#         'augment_kwargs': augment_kwargs
+#     }

@@ -85,13 +85,11 @@ def get_presets(dataset, dataset_name):
     optimization_kwargs = {'lr': 0.01,
                             'epochs': 200,
                             'sacrifice_kwargs':{'method':None,'percentage':None},
-                            # 'sacrifice_subgraph_nodes': False,
-                            # 'p_sacrifice_sugraph': 1,
-                            # 'sacrifice_general_nodes': False,
-                            # 'p_sacrifice_general': 1,
                             'coefWmk': 1,
                             'regularization_type': None,
-                            'lambda_l2': 0.01}
+                            'lambda_l2': 0.01,
+                            'use_pcgrad':False,
+                            'use_summary_beta':False}
 
     watermark_kwargs        = {'pGraphs': 1, 
                                 'watermark_type':'fancy',
@@ -148,6 +146,7 @@ def get_presets(dataset, dataset_name):
         watermark_loss_kwargs['epsilon']=0.01
         watermark_loss_kwargs['alpha']=None
         optimization_kwargs['lr']=0.002
+        subgraph_kwargs['khop_kwargs']['max_degree']=40
 
     assert watermark_kwargs['fancy_selection_kwargs']['clf_only_epochs']<=optimization_kwargs['epochs']
 
@@ -161,7 +160,8 @@ def validate_regression_kwargs():#regression_kwargs):
     assert regression_kwargs['lambda']>=0
 
 def validate_optimization_kwargs():#optimization_kwargs):
-    assert set(list(optimization_kwargs.keys()))=={'lr','epochs','sacrifice_kwargs','coefWmk','regularization_type','lambda_l2'}
+    assert set(list(optimization_kwargs.keys()))=={'lr','epochs','sacrifice_kwargs','coefWmk','regularization_type','lambda_l2','use_pcgrad'}
+    assert isinstance(optimization_kwargs['use_pcgrad'],bool)
     assert isinstance(optimization_kwargs['lr'],(int, float, np.integer, np.floating)) and optimization_kwargs['lr']>=0
     assert isinstance(optimization_kwargs['epochs'],int) and optimization_kwargs['epochs']>=0
     assert isinstance(optimization_kwargs['sacrifice_kwargs'],dict)

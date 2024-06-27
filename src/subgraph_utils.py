@@ -71,11 +71,19 @@ def create_khop_subgraph(data, dataset_name, central_node, numHops, max_num_node
         print('len subgraph_node_idx:',len(subgraph_node_idx))
         print('max_num_nodes:',max_num_nodes)
         incremented=False
-        while len(subgraph_node_idx)<max_num_nodes:
+        can_break=False
+        while len(subgraph_node_idx)<max_num_nodes and can_break==False:
+            old_len = len(subgraph_node_idx)
             incremented=True
+            print(f'len subgraph_node_idx={len(subgraph_node_idx)} but need {max_num_nodes}: adding 1 to numHop')
             numHops+=1
-            print('adding 1 to numHop')
             subgraph_node_idx = get_masked_subgraph_nodes(data, central_node, hops=numHops, mask=mask)
+            new_len = len(subgraph_node_idx)
+            if old_len==new_len:
+                numHops-=1
+                can_break=True
+                print(f'Incrementing numHops didn\'t add any more nodes -- stopped at numHops={numHops}.')
+                print(f'Some subgraphs may be smaller than desired (this one is length {new_len}).')
         if max_num_nodes is not None:
             try:
                 subgraph_node_idx = torch.tensor(random.sample(subgraph_node_idx.tolist(),max_num_nodes))
@@ -131,6 +139,10 @@ def create_rwr_subgraph(data, start_node, restart_prob=0.15, subgraph_size=50, m
     current_node = start_node
 
     for _ in range(max_steps):
+        try:
+            current_node = current_node.item()
+        except:
+            current_node = current_node
         if len(subgraph_nodes) >= subgraph_size:
             break
         if random.random() < restart_prob:
@@ -163,6 +175,8 @@ def generate_subgraph(data, dataset_name, kwargs, central_node=None, avoid_nodes
     fraction        = kwargs['fraction']
     total_num_nodes = sum(data.train_mask)
     subgraph_size   = int(fraction*total_num_nodes/numSubgraphs)
+
+    G = to_networkx(data, to_undirected=True)
 
     if overrule_size_info==True:
         assert isinstance(explicit_size_choice,int)

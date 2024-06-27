@@ -68,9 +68,15 @@ def solve_regression(x,y, lambda_=1e-1):
     beta    = beta.reshape(-1)
     return beta
 
-def regress_on_subgraph(data, nodeIndices, probas, regression_kwargs):
-    x_this_sub = data.x[nodeIndices]
-    y_this_sub = probas[nodeIndices]
+# def regress_on_subgraph(data, nodeIndices, probas, regression_kwargs):    x_this_sub = data.x[nodeIndices]
+    # y_this_sub = probas[nodeIndices]
+    # lambda_ = regression_kwargs['lambda']
+    # beta_this_sub = solve_regression(x_this_sub, y_this_sub, lambda_).clone().detach()
+    # return beta_this_sub
+
+def regress_on_subgraph(x_this_sub, probas_this_sub, regression_kwargs):
+    x_this_sub = x_this_sub
+    y_this_sub = probas_this_sub
     lambda_ = regression_kwargs['lambda']
     beta_this_sub = solve_regression(x_this_sub, y_this_sub, lambda_).clone().detach()
     return beta_this_sub

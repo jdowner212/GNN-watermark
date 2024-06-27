@@ -76,7 +76,7 @@ def collect_subgraphs_within_single_graph_for_watermarking(data, dataset_name, u
         numHops = subgraph_kwargs['khop_kwargs']['numHops']
         new_numHops = determine_whether_to_increment_numHops(dataset_name,frac,numSubgraphs,numHops)
         # need to know which subgraph_dict to actually look up
-        if new_numHops > numHops:
+        if subgraph_kwargs['method']=='khop' and new_numHops > numHops:
             config.subgraph_kwargs['khop_kwargs']['numHops']=new_numHops
         these_subgraphs_filename = get_subgraph_tag(dataset_name)
         these_subgraphs_filepath = os.path.join(subgraph_data_dir,these_subgraphs_filename)
@@ -136,23 +136,26 @@ def collect_subgraphs_within_single_graph_for_watermarking(data, dataset_name, u
     all_subgraph_node_indices = torch.tensor(all_subgraph_node_indices)
     return subgraph_dict, all_subgraph_node_indices
 
-def select_fancy_watermark_indices_shared(data, subgraph_dict, probas, num_indices, use_rand, use_unimpt, use_concat, use_avg):#, regression_kwargs):
+def select_fancy_watermark_indices_shared(num_features,subgraph_dict, probas, num_indices, use_rand, use_unimpt, use_concat, use_avg):
     regression_kwargs = config.regression_kwargs
     if use_rand:
         feature_importance, beta = [],[]
-        ordered_indices = torch.randperm(data.x.shape[1])
+        ordered_indices = torch.randperm(num_features)
     elif use_unimpt:
         if use_concat:
             all_indices = torch.concat([subgraph_dict[k]['nodeIndices'] for k in subgraph_dict.keys()])
-            beta = regress_on_subgraph(data, all_indices, probas, regression_kwargs)
+            all_x = torch.concat([subgraph_dict[k]['subgraph'].x for k in subgraph_dict.keys()])
+            beta= regress_on_subgraph(all_x, probas[all_indices], regression_kwargs)
         elif use_avg:
             betas = []
             for k in subgraph_dict.keys():
-                beta_this_sub = regress_on_subgraph(data, subgraph_dict[k]['nodeIndices'], probas, regression_kwargs)
+                indices_this_sub = subgraph_dict[k]['nodeIndices']
+                x_this_sub = subgraph_dict[k]['subgraph'].x
+                beta_this_sub= regress_on_subgraph(x_this_sub, probas[indices_this_sub], regression_kwargs)
                 betas.append(beta_this_sub)
             beta = torch.mean(torch.vstack(betas),dim=0)
         feature_importance = beta.abs()
-        ordered_indices = sorted(range(data.x.shape[1]), key=lambda item: feature_importance[item])
+        ordered_indices = sorted(range(num_features), key=lambda item: feature_importance[item])
 
     all_zero_features = [torch.where(torch.sum(subgraph_dict[k]['subgraph'].x, dim=0) == 0)[0] for k in subgraph_dict.keys()]
     indices = []
@@ -161,11 +164,11 @@ def select_fancy_watermark_indices_shared(data, subgraph_dict, probas, num_indic
         if item_not_in_any_list(ordered_indices[i],all_zero_features):
             try:
                 indices.append(ordered_indices[i].item())
-                print('imp:',feature_importance[ordered_indices[i].item()])
+                print('importance:',feature_importance[ordered_indices[i].item()])
 
             except:
                 indices.append(ordered_indices[i])
-                print('imp:',feature_importance[ordered_indices[i]])
+                print('importance:',feature_importance[ordered_indices[i]])
 
         i +=1 
     all_indices             = [indices]*len(subgraph_dict)
@@ -174,19 +177,20 @@ def select_fancy_watermark_indices_shared(data, subgraph_dict, probas, num_indic
 
     return all_indices, all_feature_importances, all_betas
 
-def select_fancy_watermark_indices_individual(data, subgraph_dict, k, use_rand, use_unimpt, probas, num_indices):#, regression_kwargs):
+def select_fancy_watermark_indices_individual(num_features,subgraph_dict, k, use_rand, use_unimpt, probas, num_indices):
     regression_kwargs = config.regression_kwargs
     k = list(subgraph_dict.keys())[0]
 
     if use_rand:
         feature_importance, beta = [], []
-        ordered_indices = torch.randperm(data.x.shape[1])
+        ordered_indices = torch.randperm(num_features)
 
     elif use_unimpt:
-        nodeIndices = subgraph_dict[k]['nodeIndices']
-        beta = regress_on_subgraph(data, nodeIndices, probas, regression_kwargs)
+        indices_this_sub = subgraph_dict[k]['nodeIndices']
+        x_this_sub = subgraph_dict[k]['subgraph'].x
+        beta= regress_on_subgraph(x_this_sub, probas[indices_this_sub], regression_kwargs)
         feature_importance = beta.abs()
-        ordered_indices = sorted(range(data.x.shape[1]), key=lambda item: feature_importance[item])
+        ordered_indices = sorted(range(num_features), key=lambda item: feature_importance[item])
 
     i=0
     indices = []
@@ -201,32 +205,31 @@ def select_fancy_watermark_indices_individual(data, subgraph_dict, k, use_rand, 
 
     return indices, feature_importance, beta
 
-def select_fancy_watermark_indices(#watermark_kwargs, 
-                                   #regression_kwargs, 
-                                   data, subgraph_dict, probas):
+def select_fancy_watermark_indices(num_features,subgraph_dict, probas):
     watermark_kwargs = config.watermark_kwargs
-    use_unimpt, use_rand, use_concat, use_avg, use_indiv, num_subgraphs, num_indices, message = describe_selection_config(data, watermark_kwargs, subgraph_dict)
+    use_unimpt, use_rand, use_concat, use_avg, use_indiv, num_subgraphs, num_indices, message = describe_selection_config(num_features, watermark_kwargs, subgraph_dict)
     if num_subgraphs==1:
         k = list(subgraph_dict.keys())[0]
-        indices, feature_importance, beta = select_fancy_watermark_indices_individual(data, subgraph_dict, k, use_rand, use_unimpt, probas, num_indices)#, regression_kwargs)
+        indices, feature_importance, beta = select_fancy_watermark_indices_individual(num_features, subgraph_dict, k, use_rand, use_unimpt, probas, num_indices)
         all_indices, all_feature_importances, all_betas = [indices], [feature_importance], [beta]
 
     elif num_subgraphs>1:
         if use_indiv:
             all_indices, all_feature_importances, all_betas = [],[],[]
             for k in subgraph_dict.keys():
-                indices, feature_importance, beta = select_fancy_watermark_indices_individual(data, subgraph_dict, k, use_rand, use_unimpt, probas, num_indices)#, regression_kwargs)
+                indices, feature_importance, beta = select_fancy_watermark_indices_individual(num_features, subgraph_dict, k, use_rand, use_unimpt, probas, num_indices)
                 all_indices.append(indices)
                 all_feature_importances.append(feature_importance)
                 all_betas.append(beta)
         else:
-            all_indices, all_feature_importances, all_betas = select_fancy_watermark_indices_shared(data, subgraph_dict, probas, num_indices, use_rand, use_unimpt, use_concat, use_avg)#, regression_kwargs)
+            all_indices, all_feature_importances, all_betas = select_fancy_watermark_indices_shared(num_features, subgraph_dict, probas, num_indices, use_rand, use_unimpt, use_concat, use_avg)
 
     assert message is not None
     print(message)
     return all_indices, all_feature_importances, all_betas
 
 def apply_basic_watermark(data, subgraph_dict, watermark_kwargs):
+    print('apply_basic_watermark')
     if watermark_kwargs['watermark_type']=='basic':
         watermark = torch.zeros(data.x.shape[1])
         p_remove = watermark_kwargs['basic_selection_kwargs']['p_remove']
@@ -238,16 +241,21 @@ def apply_basic_watermark(data, subgraph_dict, watermark_kwargs):
             subgraph_dict[subgraph_sig]['watermark']=watermark
     return subgraph_dict
 
-def apply_fancy_watermark(data, subgraph_dict, probas):#, watermark_kwargs, regression_kwargs):
-    #watermark_kwargs = config.watermark_kwargs
-    #regression_kwargs = config.regression_kwargs
-    all_watermark_indices, all_feature_importances, _ = select_fancy_watermark_indices(#watermark_kwargs, #regression_kwargs, 
-                                                                                       data, subgraph_dict, probas)
+def apply_fancy_watermark(num_features, subgraph_dict, probas):
+    print('apply_fancy_watermark')
+
+    #    if add_summary_beta==True:
+    #         all_indices = torch.concat([subgraph_dict[k]['nodeIndices'] for k in subgraph_dict.keys()])
+    #         sig = '_'.join(all_indices)
+    #         beta = regress_on_subgraph(data, all_indices, probas, regression_kwargs)
+
+
+    all_watermark_indices, all_feature_importances, _ = select_fancy_watermark_indices(num_features, subgraph_dict, probas)
     u = len(all_watermark_indices[0])
     h1,h2,random_order = u//2, u-u//2, torch.randperm(u)
     nonzero_watermark_values = torch.tensor([1]*h1 + [-1]*h2)[random_order].float()
     for i, subgraph_sig in enumerate(subgraph_dict.keys()):
-        this_watermark = torch.zeros(data.x.shape[1])
+        this_watermark = torch.zeros(num_features)
         watermarked_feature_indices = all_watermark_indices[i]
         this_watermark[watermarked_feature_indices]=nonzero_watermark_values
         subgraph_dict[subgraph_sig]['watermark']=this_watermark
