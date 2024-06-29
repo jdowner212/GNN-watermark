@@ -85,11 +85,13 @@ def get_presets(dataset, dataset_name):
     optimization_kwargs = {'lr': 0.01,
                             'epochs': 200,
                             'sacrifice_kwargs':{'method':None,'percentage':None},
+                            'clf_only':False,
                             'coefWmk': 1,
                             'regularization_type': None,
                             'lambda_l2': 0.01,
                             'use_pcgrad':False,
                             'use_summary_beta':False}
+    
 
     watermark_kwargs        = {'pGraphs': 1, 
                                 'watermark_type':'fancy',
@@ -113,6 +115,7 @@ def get_presets(dataset, dataset_name):
 
     watermark_loss_kwargs = {'epsilon': 0.001,'scale_beta_method': None,'balance_beta_weights':False,'alpha': None}
 
+    
     augment_kwargs = {'nodeDrop':{'use':True,'p':0.45}, 
                         'nodeMixUp':{'use':True,'lambda':100},  
                         'nodeFeatMask':{'use':True,'p':0.2},    
@@ -160,8 +163,7 @@ def validate_regression_kwargs():#regression_kwargs):
     assert regression_kwargs['lambda']>=0
 
 def validate_optimization_kwargs():#optimization_kwargs):
-    assert set(list(optimization_kwargs.keys()))=={'lr','epochs','sacrifice_kwargs','coefWmk','regularization_type','lambda_l2','use_pcgrad'}
-    assert isinstance(optimization_kwargs['use_pcgrad'],bool)
+    assert set(list(optimization_kwargs.keys()))=={'lr','epochs','sacrifice_kwargs','coefWmk','clf_only','regularization_type','lambda_l2','use_pcgrad','use_summary_beta'}
     assert isinstance(optimization_kwargs['lr'],(int, float, np.integer, np.floating)) and optimization_kwargs['lr']>=0
     assert isinstance(optimization_kwargs['epochs'],int) and optimization_kwargs['epochs']>=0
     assert isinstance(optimization_kwargs['sacrifice_kwargs'],dict)
@@ -169,12 +171,14 @@ def validate_optimization_kwargs():#optimization_kwargs):
     assert optimization_kwargs['sacrifice_kwargs']['method'] in [None,'subgraph_node_indices','train_node_indices']
     if optimization_kwargs['sacrifice_kwargs']['method'] is not None:
         assert isinstance(optimization_kwargs['sacrifice_kwargs']['percentage'],(int, float, np.integer, np.floating)) and optimization_kwargs['sacrifice_kwargs']['percentage']>=0 and optimization_kwargs['sacrifice_kwargs']['percentage']<=1
-
     assert isinstance(optimization_kwargs['coefWmk'],(int, float, np.integer, np.floating)) and optimization_kwargs['coefWmk']>=0
+    assert isinstance(optimization_kwargs['clf_only'], bool)
     assert optimization_kwargs['regularization_type'] in [None, 'L2','beta_var']
     if optimization_kwargs['regularization_type']=='L2':
         assert isinstance(optimization_kwargs['lambda_l2'],(int, float, np.integer, np.floating))
         assert optimization_kwargs['lambda_l2']>=0
+    assert isinstance(optimization_kwargs['use_pcgrad'],bool)
+    assert isinstance(optimization_kwargs['use_summary_beta'],bool)
 
 def validate_node_classifier_kwargs():#node_classifier_kwargs):
     assert node_classifier_kwargs['arch'] in ['GAT','GCN','GraphConv','SAGE']
