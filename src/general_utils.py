@@ -228,8 +228,8 @@ def name_compare_dict(dataset_name, optimization_kwargs, node_classifier_kwargs,
     compare_dict_name = f"compare_dicts_{folder_name}"
     return compare_dict_name
 
-def save_results(node_classifier, history, subgraph_dict, all_feature_importances, all_watermark_indices, probas, dataset_name):#, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, optimization_kwargs, augment_kwargs, watermark_loss_kwargs,regression_kwargs):
-    results_folder_name = get_results_folder_name(dataset_name)#, optimization_kwargs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs, regression_kwargs)
+def save_results(dataset_name, node_classifier, history, subgraph_dict=None, all_feature_importances=None, all_watermark_indices=None, probas=None):
+    results_folder_name = get_results_folder_name(dataset_name)
     if os.path.exists(results_folder_name)==False:
         os.mkdir(results_folder_name)
     for object_name, object in zip(['node_classifier','history','subgraph_dict','all_feature_importances','all_watermark_indices','probas'],

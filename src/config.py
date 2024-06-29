@@ -179,6 +179,8 @@ def validate_optimization_kwargs():#optimization_kwargs):
         assert optimization_kwargs['lambda_l2']>=0
     assert isinstance(optimization_kwargs['use_pcgrad'],bool)
     assert isinstance(optimization_kwargs['use_summary_beta'],bool)
+    if optimization_kwargs['sacrifice_kwargs']['method']=='train_node_indices' and optimization_kwargs['sacrifice_kwargs']['percentage']==1:
+        assert optimization_kwargs['clf_only']==False
 
 def validate_node_classifier_kwargs():#node_classifier_kwargs):
     assert node_classifier_kwargs['arch'] in ['GAT','GCN','GraphConv','SAGE']
