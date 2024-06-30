@@ -90,7 +90,8 @@ def get_presets(dataset, dataset_name):
                             'regularization_type': None,
                             'lambda_l2': 0.01,
                             'use_pcgrad':False,
-                            'use_summary_beta':False}
+                            'use_summary_beta':False,
+                            'ignore_subgraph_neighbors':False}
     
 
     watermark_kwargs        = {'pGraphs': 1, 
@@ -163,7 +164,7 @@ def validate_regression_kwargs():#regression_kwargs):
     assert regression_kwargs['lambda']>=0
 
 def validate_optimization_kwargs():#optimization_kwargs):
-    assert set(list(optimization_kwargs.keys()))=={'lr','epochs','sacrifice_kwargs','coefWmk','clf_only','regularization_type','lambda_l2','use_pcgrad','use_summary_beta'}
+    assert set(list(optimization_kwargs.keys()))=={'lr','epochs','sacrifice_kwargs','coefWmk','clf_only','regularization_type','lambda_l2','use_pcgrad','use_summary_beta','ignore_subgraph_neighbors'}
     assert isinstance(optimization_kwargs['lr'],(int, float, np.integer, np.floating)) and optimization_kwargs['lr']>=0
     assert isinstance(optimization_kwargs['epochs'],int) and optimization_kwargs['epochs']>=0
     assert isinstance(optimization_kwargs['sacrifice_kwargs'],dict)
@@ -179,8 +180,9 @@ def validate_optimization_kwargs():#optimization_kwargs):
         assert optimization_kwargs['lambda_l2']>=0
     assert isinstance(optimization_kwargs['use_pcgrad'],bool)
     assert isinstance(optimization_kwargs['use_summary_beta'],bool)
+    assert isinstance(optimization_kwargs['ignore_subgraph_neighbors'],bool)
     if optimization_kwargs['sacrifice_kwargs']['method']=='train_node_indices' and optimization_kwargs['sacrifice_kwargs']['percentage']==1:
-        assert optimization_kwargs['clf_only']==False
+        assert optimization_kwargs['clf_only']==False  
 
 def validate_node_classifier_kwargs():#node_classifier_kwargs):
     assert node_classifier_kwargs['arch'] in ['GAT','GCN','GraphConv','SAGE']
