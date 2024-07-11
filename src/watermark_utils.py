@@ -144,29 +144,20 @@ def select_fancy_watermark_indices_shared(num_features,subgraph_dict, probas, pr
         if use_concat:
             all_indices = torch.concat([subgraph_dict[k]['nodeIndices'] for k in subgraph_dict.keys()])
             all_x = torch.concat([subgraph_dict[k]['subgraph'].x for k in subgraph_dict.keys()])
-            all_probas_sep_fwd = torch.concat([probas_dict[k] for k in subgraph_dict.keys()])
-            all_probas = probas[all_indices]
-            print('all probas sep fwd passes:\n',all_probas_sep_fwd)
-            print('all probas regular:\n',all_probas)
-
-            # if config.optimization_kwargs['separate_forward_passes_per_subgraph']==True:
-            #     all_probas = torch.concat([probas_dict[k] for k in subgraph_dict.keys()])
-            # else:
-            #     all_probas = probas[all_indices]
+            if config.optimization_kwargs['separate_forward_passes_per_subgraph']==True:
+                all_probas = torch.concat([probas_dict[k] for k in subgraph_dict.keys()])
+            else:
+                all_probas = probas[all_indices]
             beta= regress_on_subgraph(all_x, all_probas, regression_kwargs)
         elif use_avg:
             betas = []
             for k in subgraph_dict.keys():
                 indices_this_sub = subgraph_dict[k]['nodeIndices']
                 x_this_sub = subgraph_dict[k]['subgraph'].x
-                probas_this_sub_sep_fwd = probas_dict[k]
-                probas_this_sub = probas[indices_this_sub]
-                print('probas this sub sep fwd passes:\n',probas_this_sub_sep_fwd)
-                print('probas this sub regular:\n',probas_this_sub)
-                # if config.optimization_kwargs['separate_forward_passes_per_subgraph']==True:
-                #     probas_this_sub = probas_dict[k]
-                # else:
-                #     probas_this_sub = probas[indices_this_sub]
+                if config.optimization_kwargs['separate_forward_passes_per_subgraph']==True:
+                    probas_this_sub = probas_dict[k]
+                else:
+                    probas_this_sub = probas[indices_this_sub]
                 beta_this_sub= regress_on_subgraph(x_this_sub, probas_this_sub, regression_kwargs)
                 betas.append(beta_this_sub)
             beta = torch.mean(torch.vstack(betas),dim=0)

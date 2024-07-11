@@ -90,6 +90,7 @@ def get_presets(dataset, dataset_name):
                             'regularization_type': None,
                             'lambda_l2': 0.01,
                             'use_pcgrad':False,
+                            'use_sam':False,
                             'use_gradnorm': False,
                             'gradnorm_alpha': 0.5,
                             'use_summary_beta':False,
@@ -171,7 +172,7 @@ def validate_regression_kwargs():#regression_kwargs):
     assert regression_kwargs['lambda']>=0
 
 def validate_optimization_kwargs():#optimization_kwargs):
-    assert set(list(optimization_kwargs.keys()))=={'lr','epochs','sacrifice_kwargs','coefWmk','clf_only','regularization_type','lambda_l2','use_pcgrad','use_gradnorm','gradnorm_alpha','use_summary_beta','ignore_subgraph_neighbors','separate_forward_passes_per_subgraph'}
+    assert set(list(optimization_kwargs.keys()))=={'lr','epochs','sacrifice_kwargs','coefWmk','clf_only','regularization_type','lambda_l2','use_pcgrad','use_sam','use_gradnorm','gradnorm_alpha','use_summary_beta','ignore_subgraph_neighbors','separate_forward_passes_per_subgraph'}
     assert isinstance(optimization_kwargs['lr'],(int, float, np.integer, np.floating)) and optimization_kwargs['lr']>=0
     assert isinstance(optimization_kwargs['epochs'],int) and optimization_kwargs['epochs']>=0
     assert isinstance(optimization_kwargs['sacrifice_kwargs'],dict)
@@ -186,6 +187,7 @@ def validate_optimization_kwargs():#optimization_kwargs):
         assert isinstance(optimization_kwargs['lambda_l2'],(int, float, np.integer, np.floating))
         assert optimization_kwargs['lambda_l2']>=0
     assert isinstance(optimization_kwargs['use_pcgrad'],bool)
+    assert isinstance(optimization_kwargs['use_sam'],bool)
     assert isinstance(optimization_kwargs['use_gradnorm'],bool)
     assert isinstance(optimization_kwargs['gradnorm_alpha'],(int, float, np.integer, np.floating))
     assert optimization_kwargs['gradnorm_alpha']>=0
