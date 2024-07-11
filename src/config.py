@@ -90,8 +90,11 @@ def get_presets(dataset, dataset_name):
                             'regularization_type': None,
                             'lambda_l2': 0.01,
                             'use_pcgrad':False,
+                            'use_gradnorm': False,
+                            'gradnorm_alpha': 0.5,
                             'use_summary_beta':False,
-                            'ignore_subgraph_neighbors':False}
+                            'ignore_subgraph_neighbors':False,
+                            'separate_forward_passes_per_subgraph':False}
     
 
     watermark_kwargs        = {'pGraphs': 1, 
@@ -102,6 +105,8 @@ def get_presets(dataset, dataset_name):
                                                             'evaluate_individually':False,
                                                             'selection_strategy': 'unimportant',
                                                             'multi_subg_strategy': 'average'}}
+    
+
     
     subgraph_kwargs         =   {'regenerate': False,
                                     'method': 'random',
@@ -117,10 +122,12 @@ def get_presets(dataset, dataset_name):
     watermark_loss_kwargs = {'epsilon': 0.001,'scale_beta_method': None,'balance_beta_weights':False,'alpha': None}
 
     
-    augment_kwargs = {'nodeDrop':{'use':True,'p':0.45}, 
-                        'nodeMixUp':{'use':True,'lambda':100},  
-                        'nodeFeatMask':{'use':True,'p':0.2},    
-                        'edgeDrop':{'use':True,'p':0.9}}
+    augment_kwargs = {'separate_trainset_from_subgraphs':True, 
+                      'ignore_subgraphs':True,
+                      'nodeDrop':{'use':True,'p':0.45}, 
+                      'nodeMixUp':{'use':True,'lambda':100},  
+                      'nodeFeatMask':{'use':True,'p':0.2},    
+                      'edgeDrop':{'use':True,'p':0.9}}
     
     if dataset_name=='default':
         pass # above settings are fine
@@ -164,7 +171,7 @@ def validate_regression_kwargs():#regression_kwargs):
     assert regression_kwargs['lambda']>=0
 
 def validate_optimization_kwargs():#optimization_kwargs):
-    assert set(list(optimization_kwargs.keys()))=={'lr','epochs','sacrifice_kwargs','coefWmk','clf_only','regularization_type','lambda_l2','use_pcgrad','use_summary_beta','ignore_subgraph_neighbors'}
+    assert set(list(optimization_kwargs.keys()))=={'lr','epochs','sacrifice_kwargs','coefWmk','clf_only','regularization_type','lambda_l2','use_pcgrad','use_gradnorm','gradnorm_alpha','use_summary_beta','ignore_subgraph_neighbors','separate_forward_passes_per_subgraph'}
     assert isinstance(optimization_kwargs['lr'],(int, float, np.integer, np.floating)) and optimization_kwargs['lr']>=0
     assert isinstance(optimization_kwargs['epochs'],int) and optimization_kwargs['epochs']>=0
     assert isinstance(optimization_kwargs['sacrifice_kwargs'],dict)
@@ -179,8 +186,12 @@ def validate_optimization_kwargs():#optimization_kwargs):
         assert isinstance(optimization_kwargs['lambda_l2'],(int, float, np.integer, np.floating))
         assert optimization_kwargs['lambda_l2']>=0
     assert isinstance(optimization_kwargs['use_pcgrad'],bool)
+    assert isinstance(optimization_kwargs['use_gradnorm'],bool)
+    assert isinstance(optimization_kwargs['gradnorm_alpha'],(int, float, np.integer, np.floating))
+    assert optimization_kwargs['gradnorm_alpha']>=0
     assert isinstance(optimization_kwargs['use_summary_beta'],bool)
     assert isinstance(optimization_kwargs['ignore_subgraph_neighbors'],bool)
+    assert isinstance(optimization_kwargs['separate_forward_passes_per_subgraph'],bool)
     if optimization_kwargs['sacrifice_kwargs']['method']=='train_node_indices' and optimization_kwargs['sacrifice_kwargs']['percentage']==1:
         assert optimization_kwargs['clf_only']==False  
 
@@ -216,7 +227,11 @@ def validate_subgraph_kwargs():#subgraph_kwargs):
         assert isinstance(rwr_kwargs['max_steps'],(int))
 
 def validate_augment_kwargs():#augment_kwargs):
-    for k in augment_kwargs.keys():
+    assert set(list(augment_kwargs.keys()))=={'separate_trainset_from_subgraphs', 'ignore_subgraphs',
+                                                 'nodeDrop', 'nodeFeatMask','edgeDrop','nodeMixUp'}
+    assert isinstance(augment_kwargs['separate_trainset_from_subgraphs'],bool)
+    assert isinstance(augment_kwargs['ignore_subgraphs'],bool)
+    for k in ['nodeDrop', 'nodeFeatMask','edgeDrop','nodeMixUp']:
         assert isinstance(augment_kwargs[k]['use'],bool)
         if k in ['nodeDrop','nodeFeatMask','edgeDrop']:
             assert set(list(augment_kwargs[k].keys()))=={'use','p'}
@@ -263,3 +278,4 @@ def validate_kwargs():#optimization_kwargs, node_classifier_kwargs, subgraph_kwa
     validate_augment_kwargs()#augment_kwargs)
     validate_watermark_kwargs()#watermark_kwargs)
     validate_watermark_loss_kwargs()#watermark_loss_kwargs)
+    assert watermark_kwargs['fancy_selection_kwargs']['clf_only_epochs']<=optimization_kwargs['epochs']
