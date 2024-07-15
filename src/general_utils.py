@@ -87,7 +87,8 @@ def get_model_tag():#node_classifier_kwargs):
 
 def get_optimization_tag():#optimization_kwargs):
     optimization_kwargs = config.optimization_kwargs
-    [lr, epochs, coef_wmk] = [optimization_kwargs[k] for k in ['lr','epochs','coefWmk']]
+    [lr, epochs] = [optimization_kwargs[k] for k in ['lr','epochs']]
+    coef_wmk = optimization_kwargs['coefWmk_kwargs']['coefWmk']
     tag = f'lr{lr}_epochs{epochs}_coefWmk{coef_wmk}'
     if optimization_kwargs['sacrifice_kwargs']['method'] == 'subgraph_node_indices':
         tag += f'_sacrifice{optimization_kwargs['sacrifice_kwargs']["percentage"]}subNodes'

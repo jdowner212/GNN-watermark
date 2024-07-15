@@ -74,11 +74,13 @@ dataset_attributes = {
 
 
 
+
+
 def get_presets(dataset, dataset_name):
     global node_classifier_kwargs, optimization_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs, regression_kwargs
 
     node_classifier_kwargs  = {'arch': 'SAGE',  'activation': 'elu',        'nLayers':3,    'hDim':256, 
-                                'dropout': 0,    'skip_connections':True,    'heads_1':8,    'heads_2':1,    
+                                'dropout': 0,    'dropout_subgraphs': 0, 'skip_connections':True,    'heads_1':8,    'heads_2':1,    
                                 'inDim': dataset.num_features,  
                                 'outDim': dataset.num_classes} 
     
@@ -86,18 +88,25 @@ def get_presets(dataset, dataset_name):
                             'epochs': 200,
                             'sacrifice_kwargs':{'method':None,'percentage':None},
                             'clf_only':False,
-                            'coefWmk': 1,
+                            'coefWmk_kwargs': {
+                                               'coefWmk':1,
+                                               'schedule_coef_wmk': False,
+                                               'min_coefWmk_scheduled': 0,
+                                               'reach_max_coef_wmk_by_epoch':100,
+                                               },
+                            # 'coefWmk': 1,
                             'regularization_type': None,
                             'lambda_l2': 0.01,
                             'use_pcgrad':False,
                             'use_sam':False,
+                            'sam_momentum':0.5,
+                            'sam_rho':0.005,
                             'use_gradnorm': False,
                             'gradnorm_alpha': 0.5,
                             'use_summary_beta':False,
                             'ignore_subgraph_neighbors':False,
                             'separate_forward_passes_per_subgraph':False}
     
-
     watermark_kwargs        = {'pGraphs': 1, 
                                 'watermark_type':'fancy',
                                 'basic_selection_kwargs': {'p_remove':0.75},
@@ -165,14 +174,14 @@ def get_presets(dataset, dataset_name):
 #    return optimization_kwargs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs, regression_kwargs
 
 
-
 def validate_regression_kwargs():#regression_kwargs):
     assert set(list(regression_kwargs.keys()))=={'lambda'}
     assert isinstance(regression_kwargs['lambda'],(int,float,np.integer,np.floating))
     assert regression_kwargs['lambda']>=0
 
+
 def validate_optimization_kwargs():#optimization_kwargs):
-    assert set(list(optimization_kwargs.keys()))=={'lr','epochs','sacrifice_kwargs','coefWmk','clf_only','regularization_type','lambda_l2','use_pcgrad','use_sam','use_gradnorm','gradnorm_alpha','use_summary_beta','ignore_subgraph_neighbors','separate_forward_passes_per_subgraph'}
+    assert set(list(optimization_kwargs.keys()))=={'lr','epochs','sacrifice_kwargs','coefWmk_kwargs','clf_only','regularization_type','lambda_l2','use_pcgrad','use_sam','sam_momentum','sam_rho','use_gradnorm','gradnorm_alpha','use_summary_beta','ignore_subgraph_neighbors','separate_forward_passes_per_subgraph'}
     assert isinstance(optimization_kwargs['lr'],(int, float, np.integer, np.floating)) and optimization_kwargs['lr']>=0
     assert isinstance(optimization_kwargs['epochs'],int) and optimization_kwargs['epochs']>=0
     assert isinstance(optimization_kwargs['sacrifice_kwargs'],dict)
@@ -180,7 +189,16 @@ def validate_optimization_kwargs():#optimization_kwargs):
     assert optimization_kwargs['sacrifice_kwargs']['method'] in [None,'subgraph_node_indices','train_node_indices']
     if optimization_kwargs['sacrifice_kwargs']['method'] is not None:
         assert isinstance(optimization_kwargs['sacrifice_kwargs']['percentage'],(int, float, np.integer, np.floating)) and optimization_kwargs['sacrifice_kwargs']['percentage']>=0 and optimization_kwargs['sacrifice_kwargs']['percentage']<=1
-    assert isinstance(optimization_kwargs['coefWmk'],(int, float, np.integer, np.floating)) and optimization_kwargs['coefWmk']>=0
+    assert isinstance(optimization_kwargs['coefWmk_kwargs'],dict)
+    assert set(list(optimization_kwargs['coefWmk_kwargs'].keys()))=={'coefWmk','min_coefWmk_scheduled','schedule_coef_wmk','reach_max_coef_wmk_by_epoch'}
+    assert isinstance(optimization_kwargs['coefWmk_kwargs']['coefWmk'],(int, float, np.integer, np.floating)) and optimization_kwargs['coefWmk_kwargs']['coefWmk']>=0
+    assert isinstance(optimization_kwargs['coefWmk_kwargs']['min_coefWmk_scheduled'],(int, float, np.integer, np.floating)) and optimization_kwargs['coefWmk_kwargs']['min_coefWmk_scheduled']>=0
+    assert isinstance(optimization_kwargs['coefWmk_kwargs']['schedule_coef_wmk'],bool)
+    assert isinstance(optimization_kwargs['coefWmk_kwargs']['reach_max_coef_wmk_by_epoch'],int) and optimization_kwargs['coefWmk_kwargs']['reach_max_coef_wmk_by_epoch']>=0
+    if optimization_kwargs['coefWmk_kwargs']['schedule_coef_wmk']==True:
+        assert optimization_kwargs['coefWmk_kwargs']['coefWmk']>optimization_kwargs['coefWmk_kwargs']['min_coefWmk_scheduled']
+        assert optimization_kwargs['coefWmk_kwargs']['reach_max_coef_wmk_by_epoch'] <= optimization_kwargs['epochs']
+
     assert isinstance(optimization_kwargs['clf_only'], bool)
     assert optimization_kwargs['regularization_type'] in [None, 'L2','beta_var']
     if optimization_kwargs['regularization_type']=='L2':
@@ -188,6 +206,8 @@ def validate_optimization_kwargs():#optimization_kwargs):
         assert optimization_kwargs['lambda_l2']>=0
     assert isinstance(optimization_kwargs['use_pcgrad'],bool)
     assert isinstance(optimization_kwargs['use_sam'],bool)
+    assert isinstance(optimization_kwargs['sam_momentum'],(int, float, np.integer, np.floating))
+    assert isinstance(optimization_kwargs['sam_rho'],(int, float, np.integer, np.floating))
     assert isinstance(optimization_kwargs['use_gradnorm'],bool)
     assert isinstance(optimization_kwargs['gradnorm_alpha'],(int, float, np.integer, np.floating))
     assert optimization_kwargs['gradnorm_alpha']>=0
@@ -198,12 +218,14 @@ def validate_optimization_kwargs():#optimization_kwargs):
         assert optimization_kwargs['clf_only']==False  
 
 def validate_node_classifier_kwargs():#node_classifier_kwargs):
+    assert set(list(node_classifier_kwargs.keys()))=={'arch','activation','nLayers','hDim','dropout','dropout_subgraphs','skip_connections','heads_1','heads_2','inDim','outDim'}
     assert node_classifier_kwargs['arch'] in ['GAT','GCN','GraphConv','SAGE']
     assert isinstance(node_classifier_kwargs['nLayers'],int)
     assert isinstance(node_classifier_kwargs['inDim'],int)
     assert isinstance(node_classifier_kwargs['hDim'],int)
     assert isinstance(node_classifier_kwargs['outDim'],int)
     assert node_classifier_kwargs['dropout']>=0 and node_classifier_kwargs['dropout']<=1
+    assert node_classifier_kwargs['dropout_subgraphs']>=0 and node_classifier_kwargs['dropout_subgraphs']<=1
     assert isinstance(node_classifier_kwargs['skip_connections'],bool)
 
 def validate_subgraph_kwargs():#subgraph_kwargs):

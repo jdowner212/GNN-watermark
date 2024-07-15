@@ -17,7 +17,6 @@ class GAT(nn.Module):
         self.nLayers=nLayers
         self.skip_connections=skip_connections
         self.activation_fn = activation_fn
-
         self.convs = nn.ModuleList()
 
         # First layer
@@ -95,6 +94,45 @@ class GCN(torch.nn.Module):
         return F.log_softmax(x, dim=1)
     
 
+
+class GCN_special(torch.nn.Module):
+    def __init__(self, inDim, hDim, hDim_subgraphs, outDim, nLayers=2, nLayers_subgraphs=3, dropout=0, dropout_subgraphs=0, skip_connections=False, activation_fn=F.relu):
+
+        super(GCN_special, self).__init__()
+        self.nLayers=nLayers
+        self.dropout = dropout
+        self.skip_connections=skip_connections
+        self.activation_fn=activation_fn
+        
+        self.convs = nn.ModuleList()
+        conv1 = GCNConv(in_channels=inDim,out_channels=hDim)
+        self.convs.append(conv1)
+        for l in range(nLayers - 2):
+            self.convs.append(GCNConv(in_channels=hDim,out_channels=hDim))
+        self.convs.append(GCNConv(in_channels=hDim,out_channels=outDim))
+
+        self.convs_subgraphs = nn.ModuleList()
+        conv1 = GCNConv(in_channels=inDim,out_channels=hDim_subgraphs)
+        self.conv_subgraphs.append(conv1)
+        for l in range(nLayers_subgraphs- 2):
+            self.convs_subgraphs.append(GCNConv(in_channels=hDim_subgraphs,out_channels=hDim_subgraphs))
+        self.convs_subgraphs.append(GCNConv(in_channels=hDim_subgraphs,out_channels=outDim))
+        
+    def forward(self, x, edge_index, subgraphs=False):
+        nLayers = self.nLayers if subgraphs==False else self.nLayers_subgraphs
+        dropout = self.dropout if subgraphs == False else self.dropout_subgraphs
+        convs = self.convs if subgraphs==False else self.convs_subgraphs
+        intermediate_outputs = []
+        for l in range(nLayers):
+            x = convs[l](x,edge_index)
+            x = self.activation_fn(x)
+            x = F.dropout(x, p=dropout, training=self.training)
+            intermediate_outputs.append(x)
+        if self.skip_connections == True:
+            x = torch.cat(intermediate_outputs, dim=-1)
+            x = self.lin(x)
+        return F.log_softmax(x, dim=1)
+
 class GraphConv_(torch.nn.Module):
     def __init__(self, inDim, hDim, outDim, nLayers=2, dropout=0, skip_connections=False, activation_fn=F.relu):
 
@@ -128,6 +166,47 @@ class GraphConv_(torch.nn.Module):
         return F.log_softmax(x, dim=1)
 
     
+
+
+class SAGE_special(torch.nn.Module):
+    def __init__(self, inDim, hDim, hDim_subgraphs, outDim, nLayers=2, nLayers_subgraphs=3, dropout=0, dropout_subgraphs=0, skip_connections=False, activation_fn=F.elu, conv_fn=SAGEConv):
+        super(SAGE_special, self).__init__()
+        self.nLayers = nLayers
+        self.dropout = dropout
+        self.dropout_subgraphs = dropout_subgraphs
+        self.skip_connections = skip_connections
+        self.activation_fn = activation_fn
+        
+        self.convs = nn.ModuleList()
+        self.convs.append(conv_fn(in_channels=inDim, out_channels=hDim))
+        for l in range(nLayers - 2):
+            self.convs.append(conv_fn(in_channels=hDim, out_channels=hDim))
+        self.convs.append(conv_fn(in_channels=hDim, out_channels=outDim))
+
+        self.subgraph_convs = nn.ModuleList()
+        self.subgraph_convs.append(conv_fn(in_channels=inDim, out_channels=hDim_subgraphs))
+        for l in range(nLayers_subgraphs - 2):
+            self.subgraph_convs.append(conv_fn(in_channels=hDim_subgraphs, out_channels=hDim_subgraphs))
+        self.subgraph_convs.append(conv_fn(in_channels=hDim_subgraphs, out_channels=outDim))
+        if skip_connections:
+            self.lin = nn.Linear(hDim * nLayers, outDim)
+    
+    def forward(self, x, edge_index, subgraphs=False):
+        convs = self.subgraph_convs if subgraphs else self.convs
+        dropout_rate = self.dropout_subgraphs if subgraphs else self.dropout  # Different dropout rates
+        intermediate_outputs = []
+        for l in range(self.nLayers):
+            x = convs[l](x, edge_index)
+            x = self.activation_fn(x)
+            x = F.dropout(x, p=dropout_rate, training=self.training)
+            intermediate_outputs.append(x)
+        if self.skip_connections:
+            x = torch.cat(intermediate_outputs, dim=-1)
+            x = self.lin(x)
+        return F.log_softmax(x, dim=1)
+
+
+
 class SAGE(torch.nn.Module):
     def __init__(self, inDim, hDim, outDim, nLayers=2, dropout=0, skip_connections=False, activation_fn=F.elu, conv_fn=SAGEConv):
 
@@ -195,12 +274,12 @@ class Net(torch.nn.Module):
         self.feature_weights = torch.zeros(inDim)  # To track feature weights
 
         
-    def forward(self, x, edge_index):
+    def forward(self, x, edge_index, dropout=0):
         intermediate_outputs = []
         for l in range(self.nLayers):
             x = self.convs[l](x,edge_index)
             x = self.activation_fn(x)
-            x = F.dropout(x, p=self.dropout, training=self.training)
+            x = F.dropout(x, p=dropout, training=self.training)
             intermediate_outputs.append(x)
         if self.skip_connections == True:
             x = torch.cat(intermediate_outputs, dim=-1)
