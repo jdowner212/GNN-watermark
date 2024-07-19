@@ -86,6 +86,7 @@ def get_presets(dataset, dataset_name):
     
     optimization_kwargs = {'lr': 0.01,
                             'epochs': 200,
+                            'freeze_params_before_wmk':False,
                             'sacrifice_kwargs':{'method':None,'percentage':None},
                             'clf_only':False,
                             'coefWmk_kwargs': {
@@ -96,6 +97,8 @@ def get_presets(dataset, dataset_name):
                                                },
                             # 'coefWmk': 1,
                             'regularization_type': None,
+                            'perturb_x':False,
+                            'perturb_lr':0,
                             'lambda_l2': 0.01,
                             'use_pcgrad':False,
                             'use_sam':False,
@@ -106,6 +109,7 @@ def get_presets(dataset, dataset_name):
                             'use_summary_beta':False,
                             'ignore_subgraph_neighbors':False,
                             'separate_forward_passes_per_subgraph':False}
+    
     
     watermark_kwargs        = {'pGraphs': 1, 
                                 'watermark_type':'fancy',
@@ -181,9 +185,10 @@ def validate_regression_kwargs():#regression_kwargs):
 
 
 def validate_optimization_kwargs():#optimization_kwargs):
-    assert set(list(optimization_kwargs.keys()))=={'lr','epochs','sacrifice_kwargs','coefWmk_kwargs','clf_only','regularization_type','lambda_l2','use_pcgrad','use_sam','sam_momentum','sam_rho','use_gradnorm','gradnorm_alpha','use_summary_beta','ignore_subgraph_neighbors','separate_forward_passes_per_subgraph'}
+    assert set(list(optimization_kwargs.keys()))=={'lr','epochs','freeze_params_before_wmk','sacrifice_kwargs','coefWmk_kwargs','clf_only','regularization_type','lambda_l2','use_pcgrad','use_sam','sam_momentum','sam_rho','use_gradnorm','gradnorm_alpha','use_summary_beta','ignore_subgraph_neighbors','separate_forward_passes_per_subgraph','perturb_x','perturb_lr'}
     assert isinstance(optimization_kwargs['lr'],(int, float, np.integer, np.floating)) and optimization_kwargs['lr']>=0
     assert isinstance(optimization_kwargs['epochs'],int) and optimization_kwargs['epochs']>=0
+    assert isinstance(optimization_kwargs['freeze_params_before_wmk'],bool)
     assert isinstance(optimization_kwargs['sacrifice_kwargs'],dict)
     assert set(list(optimization_kwargs['sacrifice_kwargs'].keys()))=={'method','percentage'}
     assert optimization_kwargs['sacrifice_kwargs']['method'] in [None,'subgraph_node_indices','train_node_indices']
@@ -216,6 +221,9 @@ def validate_optimization_kwargs():#optimization_kwargs):
     assert isinstance(optimization_kwargs['separate_forward_passes_per_subgraph'],bool)
     if optimization_kwargs['sacrifice_kwargs']['method']=='train_node_indices' and optimization_kwargs['sacrifice_kwargs']['percentage']==1:
         assert optimization_kwargs['clf_only']==False  
+    assert isinstance(optimization_kwargs['perturb_x'],bool)
+    if optimization_kwargs['perturb_x']==True:
+        assert isinstance(optimization_kwargs['perturb_lr'],(int, float, np.integer, np.floating)) and optimization_kwargs['perturb_lr']>=0
 
 def validate_node_classifier_kwargs():#node_classifier_kwargs):
     assert set(list(node_classifier_kwargs.keys()))=={'arch','activation','nLayers','hDim','dropout','dropout_subgraphs','skip_connections','heads_1','heads_2','inDim','outDim'}
