@@ -111,26 +111,26 @@ def create_khop_subgraph(data, dataset_name, central_node, numHops, max_num_node
     return data_sub, subgraph_node_idx, numHops
 
 def create_random_subgraph(data, subgraph_size, mask=None, avoid_nodes=None, verbose=True):
-        num_nodes = data.num_nodes
-        num_selected_nodes = subgraph_size
-        nodes_random_order = torch.randperm(num_nodes)
-        if mask is not None:
-            nodes_random_order = torch.tensor([n.item() for n in nodes_random_order if mask[n.item()] is not False])
-        if avoid_nodes is not None:
-            nodes_random_order = torch.tensor([n.item() for n in nodes_random_order if n not in avoid_nodes])
-        selected_nodes = nodes_random_order[:num_selected_nodes]
-        if verbose==True:
-            print('selected_nodes:',selected_nodes)
+    num_nodes = data.num_nodes
+    num_selected_nodes = subgraph_size
+    nodes_random_order = torch.randperm(num_nodes)
+    if mask is not None:
+        nodes_random_order = torch.tensor([n.item() for n in nodes_random_order if mask[n.item()] is not False])
+    if avoid_nodes is not None:
+        nodes_random_order = torch.tensor([n.item() for n in nodes_random_order if n not in avoid_nodes])
+    selected_nodes = nodes_random_order[:num_selected_nodes]
+    if verbose==True:
+        print('selected_nodes:',selected_nodes)
 
-        sub_edge_index, _ = subgraph(selected_nodes, data.edge_index, relabel_nodes=True, num_nodes=num_nodes)
-        sub_data = Data(
-            x=data.x[selected_nodes] if data.x is not None else None,
-            edge_index=sub_edge_index,
-            y=data.y[selected_nodes] if data.y is not None else None,
-            train_mask=data.train_mask[selected_nodes] if data.train_mask is not None else None,
-            test_mask=data.test_mask[selected_nodes] if data.test_mask is not None else None,
-            val_mask=data.val_mask[selected_nodes] if data.val_mask is not None else None)
-        return sub_data, selected_nodes
+    sub_edge_index, _ = subgraph(selected_nodes, data.edge_index, relabel_nodes=True, num_nodes=num_nodes)
+    sub_data = Data(
+        x=data.x[selected_nodes] if data.x is not None else None,
+        edge_index=sub_edge_index,
+        y=data.y[selected_nodes] if data.y is not None else None,
+        train_mask=data.train_mask[selected_nodes] if data.train_mask is not None else None,
+        test_mask=data.test_mask[selected_nodes] if data.test_mask is not None else None,
+        val_mask=data.val_mask[selected_nodes] if data.val_mask is not None else None)
+    return sub_data, selected_nodes
 
 
 def create_rwr_subgraph(data, start_node, restart_prob=0.15, subgraph_size=50, max_steps=1000, mask=None, avoid_nodes=None):

@@ -139,7 +139,7 @@ def get_presets(dataset, dataset_name):
     augment_kwargs = {'separate_trainset_from_subgraphs':True, 
                       'ignore_subgraphs':True,
                       'nodeDrop':{'use':True,'p':0.45}, 
-                      'nodeMixUp':{'use':True,'lambda':100},  
+                      'nodeMixUp':{'use':True,'lambda':0},  
                       'nodeFeatMask':{'use':True,'p':0.2},    
                       'edgeDrop':{'use':True,'p':0.9}}
     
