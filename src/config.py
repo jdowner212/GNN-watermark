@@ -87,6 +87,9 @@ def get_presets(dataset, dataset_name):
     optimization_kwargs = {'lr': 0.01,
                             'epochs': 200,
                             'freeze_params_before_wmk':False,
+                            'penalize_similar_subgraphs':False,
+                            'p_swap':0,
+                            'shifted_subgraph_loss_coef':0,
                             'sacrifice_kwargs':{'method':None,'percentage':None},
                             'clf_only':False,
                             'coefWmk_kwargs': {
@@ -112,12 +115,13 @@ def get_presets(dataset, dataset_name):
     
     
     watermark_kwargs        = {'pGraphs': 1, 
-                                'watermark_type':'fancy',
-                                'basic_selection_kwargs': {'p_remove':0.75},
-                                'fancy_selection_kwargs': {'percent_of_features_to_watermark':100,
+                               'percent_of_features_to_watermark':100,
+                                'watermark_type':'unimportant',
+                                # 'basic_selection_kwargs': {'p_remove':0.75},
+                                'unimportant_selection_kwargs': {#'percent_of_features_to_watermark':100,
                                                             'clf_only_epochs':100, 
                                                             'evaluate_individually':False,
-                                                            'selection_strategy': 'unimportant',
+                                                            # 'selection_strategy': 'unimportant',
                                                             'multi_subg_strategy': 'average'}}
     
 
@@ -137,6 +141,7 @@ def get_presets(dataset, dataset_name):
 
     
     augment_kwargs = {'separate_trainset_from_subgraphs':True, 
+                      'p':1,
                       'ignore_subgraphs':True,
                       'nodeDrop':{'use':True,'p':0.45}, 
                       'nodeMixUp':{'use':True,'lambda':0},  
@@ -155,7 +160,6 @@ def get_presets(dataset, dataset_name):
         optimization_kwargs['epochs']=100
 
         node_classifier_kwargs['arch']='GCN'
-        watermark_kwargs['p_remove']=0
 
         augment_kwargs = {'nodeDrop': {'use': True, 'p': 0.3},
                           'nodeMixUp': {'use': True, 'lambda': 40},
@@ -173,7 +177,7 @@ def get_presets(dataset, dataset_name):
         optimization_kwargs['lr']=0.002
         subgraph_kwargs['khop_kwargs']['max_degree']=40
 
-    assert watermark_kwargs['fancy_selection_kwargs']['clf_only_epochs']<=optimization_kwargs['epochs']
+    assert watermark_kwargs['unimportant_selection_kwargs']['clf_only_epochs']<=optimization_kwargs['epochs']
 
 #    return optimization_kwargs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs, regression_kwargs
 
@@ -185,10 +189,13 @@ def validate_regression_kwargs():#regression_kwargs):
 
 
 def validate_optimization_kwargs():#optimization_kwargs):
-    assert set(list(optimization_kwargs.keys()))=={'lr','epochs','freeze_params_before_wmk','sacrifice_kwargs','coefWmk_kwargs','clf_only','regularization_type','lambda_l2','use_pcgrad','use_sam','sam_momentum','sam_rho','use_gradnorm','gradnorm_alpha','use_summary_beta','ignore_subgraph_neighbors','separate_forward_passes_per_subgraph','perturb_x','perturb_lr'}
+    assert set(list(optimization_kwargs.keys()))=={'lr','epochs','freeze_params_before_wmk','penalize_similar_subgraphs','p_swap','shifted_subgraph_loss_coef','sacrifice_kwargs','coefWmk_kwargs','clf_only','regularization_type','lambda_l2','use_pcgrad','use_sam','sam_momentum','sam_rho','use_gradnorm','gradnorm_alpha','use_summary_beta','ignore_subgraph_neighbors','separate_forward_passes_per_subgraph','perturb_x','perturb_lr'}
     assert isinstance(optimization_kwargs['lr'],(int, float, np.integer, np.floating)) and optimization_kwargs['lr']>=0
     assert isinstance(optimization_kwargs['epochs'],int) and optimization_kwargs['epochs']>=0
     assert isinstance(optimization_kwargs['freeze_params_before_wmk'],bool)
+    assert isinstance(optimization_kwargs['penalize_similar_subgraphs'],bool)
+    assert isinstance(optimization_kwargs['p_swap'],(int, float, np.integer, np.floating)) and optimization_kwargs['p_swap']>=0 and optimization_kwargs['p_swap']<=1
+    assert isinstance(optimization_kwargs['shifted_subgraph_loss_coef'],(int, float, np.integer, np.floating)) and optimization_kwargs['shifted_subgraph_loss_coef']>=0
     assert isinstance(optimization_kwargs['sacrifice_kwargs'],dict)
     assert set(list(optimization_kwargs['sacrifice_kwargs'].keys()))=={'method','percentage'}
     assert optimization_kwargs['sacrifice_kwargs']['method'] in [None,'subgraph_node_indices','train_node_indices']
@@ -259,9 +266,10 @@ def validate_subgraph_kwargs():#subgraph_kwargs):
         assert isinstance(rwr_kwargs['max_steps'],(int))
 
 def validate_augment_kwargs():#augment_kwargs):
-    assert set(list(augment_kwargs.keys()))=={'separate_trainset_from_subgraphs', 'ignore_subgraphs',
+    assert set(list(augment_kwargs.keys()))=={'separate_trainset_from_subgraphs', 'p','ignore_subgraphs',
                                                  'nodeDrop', 'nodeFeatMask','edgeDrop','nodeMixUp'}
     assert isinstance(augment_kwargs['separate_trainset_from_subgraphs'],bool)
+    assert isinstance(augment_kwargs['p'],(int, float, np.integer, np.floating)) and augment_kwargs['p']>=0 and augment_kwargs['p']<=1
     assert isinstance(augment_kwargs['ignore_subgraphs'],bool)
     for k in ['nodeDrop', 'nodeFeatMask','edgeDrop','nodeMixUp']:
         assert isinstance(augment_kwargs[k]['use'],bool)
@@ -273,21 +281,21 @@ def validate_augment_kwargs():#augment_kwargs):
             assert isinstance(augment_kwargs[k]['lambda'],int) or isinstance(augment_kwargs[k]['lambda'],float)
 
 def validate_watermark_kwargs():#watermark_kwargs):
-    assert set(list(watermark_kwargs.keys()))=={'pGraphs', 'watermark_type', 'basic_selection_kwargs', 'fancy_selection_kwargs'}
-    assert watermark_kwargs['watermark_type'] in ['fancy','basic']
-    if watermark_kwargs['watermark_type']=='basic':
-        basic_kwargs = watermark_kwargs['basic_selection_kwargs']
-        assert set(list(basic_kwargs.keys()))=={'p_remove'}
-        assert isinstance(basic_kwargs['p_remove'], (int, float, np.integer, np.floating))
-    if watermark_kwargs['watermark_type']=='fancy':
-        fancy_kwargs = watermark_kwargs['fancy_selection_kwargs']
-        assert set(list(fancy_kwargs.keys()))=={'percent_of_features_to_watermark', 'clf_only_epochs', 'evaluate_individually', 'selection_strategy', 'multi_subg_strategy'}
-        assert fancy_kwargs['percent_of_features_to_watermark'] >= 0 and fancy_kwargs['percent_of_features_to_watermark'] <= 100 and isinstance(fancy_kwargs['percent_of_features_to_watermark'], (int, float, complex, np.integer, np.floating))
-        assert isinstance(fancy_kwargs['clf_only_epochs'],int) and fancy_kwargs['clf_only_epochs']>=0
-        assert isinstance(fancy_kwargs['evaluate_individually'],bool)
-        assert fancy_kwargs['selection_strategy'] in ['unimportant','random']
-        if fancy_kwargs['evaluate_individually']==False and fancy_kwargs['selection_strategy']!='random':
-            assert fancy_kwargs['multi_subg_strategy'] in ['concat','average']
+    assert set(list(watermark_kwargs.keys()))=={'pGraphs', 'percent_of_features_to_watermark','watermark_type', 'unimportant_selection_kwargs'}
+    assert watermark_kwargs['percent_of_features_to_watermark'] >= 0 and watermark_kwargs['percent_of_features_to_watermark'] <= 100 and isinstance(watermark_kwargs['percent_of_features_to_watermark'], (int, float, complex, np.integer, np.floating))
+    assert watermark_kwargs['watermark_type'] in ['unimportant','basic','most_represented']
+    #if watermark_kwargs['watermark_type']=='basic':
+    #    basic_kwargs = watermark_kwargs['basic_selection_kwargs']
+    #    assert set(list(basic_kwargs.keys()))=={'p_remove'}
+    #    assert isinstance(basic_kwargs['p_remove'], (int, float, np.integer, np.floating))
+    if watermark_kwargs['watermark_type']=='unimportant':
+        unimportant_kwargs = watermark_kwargs['unimportant_selection_kwargs']
+        assert set(list(unimportant_kwargs.keys()))=={'clf_only_epochs', 'evaluate_individually', 'multi_subg_strategy'}
+        assert isinstance(unimportant_kwargs['clf_only_epochs'],int) and unimportant_kwargs['clf_only_epochs']>=0
+        assert isinstance(unimportant_kwargs['evaluate_individually'],bool)
+        # assert unimportant_kwargs['selection_strategy'] in ['unimportant','most_represented','random']
+        if unimportant_kwargs['evaluate_individually']==False:# and unimportant_kwargs['selection_strategy']=='unimportant':
+            assert unimportant_kwargs['multi_subg_strategy'] in ['concat','average']
 
 
 def validate_watermark_loss_kwargs():#watermark_loss_kwargs):
@@ -310,4 +318,4 @@ def validate_kwargs():#optimization_kwargs, node_classifier_kwargs, subgraph_kwa
     validate_augment_kwargs()#augment_kwargs)
     validate_watermark_kwargs()#watermark_kwargs)
     validate_watermark_loss_kwargs()#watermark_loss_kwargs)
-    assert watermark_kwargs['fancy_selection_kwargs']['clf_only_epochs']<=optimization_kwargs['epochs']
+    assert watermark_kwargs['unimportant_selection_kwargs']['clf_only_epochs']<=optimization_kwargs['epochs']

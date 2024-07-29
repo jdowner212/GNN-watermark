@@ -16,6 +16,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 
+
 from torch_geometric.data import Data  
 from torch_geometric.loader import DataLoader
 from torch_geometric.utils import to_networkx, k_hop_subgraph, subgraph
@@ -49,6 +50,9 @@ def rank_training_nodes_by_degree(dataset_name, graph_to_watermark, max_degree=N
 
 def determine_whether_to_increment_numHops(dataset_name,frac,numSubgraphs,numHops):
     file_name = os.path.join(data_dir,dataset_name,'subgraphs','must_increment_numHops.txt')
+    if os.path.exists(file_name)==False:
+        with open(file_name,'w') as f:
+            pass
     with open(file_name,'r') as f:
         lines = f.readlines()
         for line in lines:

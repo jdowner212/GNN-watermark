@@ -53,6 +53,7 @@ def prep_data(dataset_name='CORA',
               train_val_test_split=[0.6,0.2,0.2]
               ):
     class_ = dataset_attributes[dataset_name]['class']
+    print('class:',class_)
     single_or_multi_graph = dataset_attributes[dataset_name]['single_or_multi_graph']
 
     if location=='default':
@@ -227,22 +228,23 @@ def filter_out_zero_features_from_unimportant_indices(unimportant_indices, subgr
 
 
 
-def select_indices_of_present_features(current_indices, num_indices, zero_features):
-    indices = []
-    i=0
-    while len(indices)<num_indices:
-        if current_indices[i] not in zero_features:
-            try:
-                indices.append(current_indices[i].item())
-            except:
-                indices.append(current_indices[i])
-        i +=1 
-    return torch.tensor(indices)
+# def select_indices_of_present_features(current_indices, num_indices, zero_features):
+#     indices = []
+#     i=0
+#     while len(indices)<num_indices:
+#         if current_indices[i] not in zero_features:
+#             try:
+#                 indices.append(current_indices[i].item())
+#             except:
+#                 indices.append(current_indices[i])
+#         i +=1 
+#     return torch.tensor(indices)
 
 
 
 def get_omit_indices(x_sub, watermark, ignore_zeros_from_subgraphs=True):
     if ignore_zeros_from_subgraphs==True:
+        print('ommitting zeros from subgraphs')
         zero_features_within_subgraph = torch.where(torch.sum(x_sub, dim=0) == 0)
     else:
         zero_features_within_subgraph = torch.tensor([[]])
@@ -276,6 +278,7 @@ def get_one_minus_B_x_W(beta, watermark, omit_indices):
 
 
 def augment_data(data, node_aug, edge_aug, train_nodes_to_consider, all_subgraph_indices):
+    p = config.augment_kwargs['p']
     new_data = copy.deepcopy(data)
     new_data.x = new_data.x.detach().clone()
 
@@ -291,15 +294,24 @@ def augment_data(data, node_aug, edge_aug, train_nodes_to_consider, all_subgraph
         mask = torch.isin(data.edge_index[0], indices) & torch.isin(data.edge_index[1], indices)
         data.edge_index[:, mask] = augmented_data.edge_index
 
+    def select_random_indices(indices, p):
+        n = len(indices)
+        random_order = torch.randperm(n)
+        num_keep = int(p*n)
+        keep_indices = indices[random_order[:num_keep]]
+        return keep_indices
+
     if config.augment_kwargs['separate_trainset_from_subgraphs'] == True and config.optimization_kwargs['clf_only']==False:
         trn_minus_subgraph_nodes = torch.tensor(list(set(train_nodes_to_consider.tolist())-set(all_subgraph_indices)))
-        train_minus_subgraph_data = get_subgraph_from_node_indices(copy.deepcopy(data), trn_minus_subgraph_nodes)
+        trn_minus_subgraph_nodes_keep = select_random_indices(trn_minus_subgraph_nodes, p)
+        train_minus_subgraph_data = get_subgraph_from_node_indices(copy.deepcopy(data), trn_minus_subgraph_nodes_keep)
         train_minus_subgraph_data = apply_augmentations(train_minus_subgraph_data, [node_aug, edge_aug])
-        update_data(new_data, trn_minus_subgraph_nodes, train_minus_subgraph_data)
+        update_data(new_data, trn_minus_subgraph_nodes_keep, train_minus_subgraph_data)
         if config.augment_kwargs['ignore_subgraphs']==False:
-            subgraph_data = get_subgraph_from_node_indices(copy.deepcopy(data), all_subgraph_indices)
+            all_subgraph_indices_keep = select_random_indices(all_subgraph_indices,p)
+            subgraph_data = get_subgraph_from_node_indices(copy.deepcopy(data), all_subgraph_indices_keep)
             subgraph_data = apply_augmentations(subgraph_data, [node_aug, edge_aug])
-            update_data(new_data, all_subgraph_indices, subgraph_data)
+            update_data(new_data, all_subgraph_indices_keep, subgraph_data)
 
     elif config.augment_kwargs['separate_trainset_from_subgraphs'] == False or config.optimization_kwargs['clf_only']==True:
         new_data = apply_augmentations(new_data, [node_aug, edge_aug])
@@ -320,8 +332,7 @@ def setup_history(clf_only=False, subgraph_signatures=None):
     return history, betas_dict, beta_similarities_dict
 
 def setup_subgraph_dict(data, dataset_name):
-    print('setup_subgraph_dict')
-    optimization_kwargs=config.optimization_kwargs
+    num_features = data.x.shape[1]
     subgraph_kwargs = config.subgraph_kwargs
     watermark_kwargs = config.watermark_kwargs
     subgraph_dict, all_subgraph_indices = collect_subgraphs_within_single_graph_for_watermarking(data, dataset_name, use_train_mask=True, subgraph_kwargs=subgraph_kwargs)
@@ -334,8 +345,12 @@ def setup_subgraph_dict(data, dataset_name):
             all_subgraph_node_indices += nodeIndices
         all_subgraph_node_indices = torch.tensor(all_subgraph_node_indices)
     subgraph_signatures = list(subgraph_dict.keys())
-    if watermark_kwargs['watermark_type']=='basic':
-        subgraph_dict = apply_basic_watermark(data, subgraph_dict, watermark_kwargs)
+    # if watermark_kwargs['watermark_type']=='basic':
+    #     subgraph_dict = apply_basic_watermark(num_features, subgraph_dict, watermark_kwargs)
+    #     subgraph_dict, each_subgraph_watermark_indices, each_subgraph_feature_importances = apply_watermark(watermark_type, num_features, len_watermark, subgraph_dict, x=None, probas=None, probas_dict=None, watermark_kwargs=None)
+
+    # elif watermark_kwargs['watermark_type']=='most_represented':
+
 
     return subgraph_dict, subgraph_signatures, all_subgraph_indices
 
@@ -382,11 +397,17 @@ def optimize_watermark(probas, probas_dict,
                        subgraph_dict,sig,
                        ignore_zeros_from_subgraphs=False, 
                        debug=False,
-                       balanced_beta_weights=None):
+                       balanced_beta_weights=None,
+                       similar_subgraph=False):
     
     watermark_loss_kwargs = config.watermark_loss_kwargs
     regression_kwargs = config.regression_kwargs
-    this_watermark, data_sub, subgraph_node_indices = [subgraph_dict[sig][k] for k in ['watermark','subgraph','nodeIndices']]
+    if similar_subgraph==False:
+        this_watermark, data_sub, subgraph_node_indices = [subgraph_dict[sig][k] for k in ['watermark','subgraph','nodeIndices']]
+    elif similar_subgraph==True:
+        this_watermark, data_sub, subgraph_node_indices = [subgraph_dict[sig][k] for k in ['watermark','subgraph_shifted','nodeIndices_shifted']]
+
+
     x_sub = data_sub.x
     if config.optimization_kwargs['separate_forward_passes_per_subgraph']==True:
         y_sub = probas_dict[sig]
@@ -521,7 +542,7 @@ def get_beta_weights(subgraph_dict, num_features):
     
 
 def optimize_and_update(probas, probas_dict, subgraph_dict, betas_dict, beta_similarities_dict, is_last_epoch,
-                        debug_multiple_subgraphs, beta_weights):
+                        debug_multiple_subgraphs, beta_weights, penalize_similar_subgraphs=False, shifted_subgraph_loss_coef=0):
     loss_watermark, beta_similarity = torch.tensor(0.0, requires_grad=True), torch.tensor(0.0)
     betas_from_every_subgraph = []
     percent_matches=[]
@@ -529,7 +550,15 @@ def optimize_and_update(probas, probas_dict, subgraph_dict, betas_dict, beta_sim
         this_loss_watermark, this_percent_match, this_beta_similarity,this_raw_beta = optimize_watermark(probas, probas_dict, subgraph_dict, sig, 
                                                                                                          ignore_zeros_from_subgraphs=False, 
                                                                                                          debug=debug_multiple_subgraphs,
-                                                                                                         balanced_beta_weights=beta_weights[s])
+                                                                                                         balanced_beta_weights=beta_weights[s],similar_subgraph=False)
+        
+        if penalize_similar_subgraphs==True:
+            similar_subgraph_penalty, _, _, _ = optimize_watermark(probas, probas_dict, subgraph_dict, sig, 
+                                                                                                         ignore_zeros_from_subgraphs=False, 
+                                                                                                         debug=debug_multiple_subgraphs,
+                                                                                                         balanced_beta_weights=beta_weights[s],similar_subgraph=True)
+            this_loss_watermark = this_loss_watermark - shifted_subgraph_loss_coef*similar_subgraph_penalty
+
         #if config.optimization_kwargs['perturb_x']==True:
         #    perturbation_l1_norm = 1e-8*torch.norm(self.perturbation, p=1)
         #    print('perturbation_l1_norm:',perturbation_l1_norm)
@@ -661,7 +690,7 @@ class Trainer():
             self.beta_similarity = torch.tensor(0.0)
             self.train_nodes_to_consider_mask = get_train_nodes_to_consider(self.data, self.subgraph_dict, self.all_subgraph_indices, self.sacrifice_method, self.data.x.shape[0])
             self.train_nodes_to_consider = torch.where(self.train_nodes_to_consider_mask==True)[0]
-            self.all_feature_importances, self.all_watermark_indices, self.probas = None, None, None
+            self.each_subgraph_feature_importances, self.each_subgraph_watermark_indices, self.probas = None, None, None
             self.x_grad = None
         return
 
@@ -702,10 +731,13 @@ class Trainer():
         return node_classifier, optimizer
 
     def build_wmk_coef_sched(self, num_changes=3):
+        if config.watermark_kwargs['watermark_type']=='unmportant':
+            wmk_start_epoch = config.watermark_kwargs['unimportant_selection_kwargs']['clf_only_epochs']
+        else:
+            wmk_start_epoch = 0
         if config.optimization_kwargs['coefWmk_kwargs']['schedule_coef_wmk']==True:
             min_coef = config.optimization_kwargs['coefWmk_kwargs']['min_coefWmk_scheduled']
             max_coef = config.optimization_kwargs['coefWmk_kwargs']['coefWmk']
-            wmk_start_epoch = config.watermark_kwargs['fancy_selection_kwargs']['clf_only_epochs']
             reach_max_by = config.optimization_kwargs['coefWmk_kwargs']['reach_max_coef_wmk_by_epoch']
             coef_intervals = list(np.linspace(min_coef, max_coef, num=num_changes, dtype=int))
             epoch_intervals = list(np.linspace(wmk_start_epoch, reach_max_by, num=num_changes, dtype=int))
@@ -720,9 +752,7 @@ class Trainer():
                 except:
                     self.wmk_coef_schedule_dict[epoch]=coef_intervals[-1]
         else:
-            wmk_start_epoch = config.watermark_kwargs['fancy_selection_kwargs']['clf_only_epochs']
             self.wmk_coef_schedule_dict = {}#
-            wmk_start_epoch = config.watermark_kwargs['fancy_selection_kwargs']['clf_only_epochs']
             for epoch in range(wmk_start_epoch, config.optimization_kwargs['epochs']):
                 self.wmk_coef_schedule_dict[epoch]=config.optimization_kwargs['coefWmk_kwargs']['coefWmk']
 
@@ -743,10 +773,13 @@ class Trainer():
             return self.node_classifier, self.history, None, None, None, None
         else:
             self.build_wmk_coef_sched(num_changes=3) # builds even if coefWmk is constant
+            # watermark_instantiated=False
             for epoch in tqdm(range(self.epochs)):
                 self.epoch=epoch
                 self.edge_index, self.x, self.y    = augment_data(self.data, self.node_aug, self.edge_aug, self.train_nodes_to_consider, self.all_subgraph_indices)
-                wmk_optimization_condition_met = (config.watermark_kwargs['watermark_type']=='basic') or (config.watermark_kwargs['watermark_type']=='fancy' and self.epoch>=config.watermark_kwargs['fancy_selection_kwargs']['clf_only_epochs']) 
+                wmk_optimization_condition_met_op1 = config.watermark_kwargs['watermark_type']=='basic' or config.watermark_kwargs['watermark_type']=='most_represented'
+                wmk_optimization_condition_met_op2 = config.watermark_kwargs['watermark_type']=='unimportant' and self.epoch>=config.watermark_kwargs['unimportant_selection_kwargs']['clf_only_epochs']
+                wmk_optimization_condition_met = wmk_optimization_condition_met_op1 or wmk_optimization_condition_met_op2
                 if not wmk_optimization_condition_met:
                     self.percent_matches = [0]*(len(self.subgraph_signatures))
                     closure = self.closure_primary
@@ -755,6 +788,9 @@ class Trainer():
                 elif wmk_optimization_condition_met:
                     if config.optimization_kwargs['freeze_params_before_wmk']==True:
                         self.instantiate_optimizer(freeze=True)
+                    # if watermark_instantiated==False:
+                        # self.subgraph_dict = self.apply_watermark_()
+                        # watermark_instantiated=True
                     self.coefWmk = self.wmk_coef_schedule_dict[epoch]
                     closure = self.closure_watermark
                     # print('self.x 3:',self.x)
@@ -791,8 +827,8 @@ class Trainer():
 
 
         if save==True:
-            save_results(self.dataset_name, self.node_classifier, self.history, self.subgraph_dict, self.all_feature_importances, self.all_watermark_indices, self.probas)
-        return self.node_classifier, self.history, self.subgraph_dict, self.all_feature_importances, self.all_watermark_indices, self.probas
+            save_results(self.dataset_name, self.node_classifier, self.history, self.subgraph_dict, self.each_subgraph_feature_importances, self.each_subgraph_watermark_indices, self.probas)
+        return self.node_classifier, self.history, self.subgraph_dict, self.each_subgraph_feature_importances, self.each_subgraph_watermark_indices, self.probas
                     
     def train_clf_only(self, save=True, print_every=1):
         for epoch in tqdm(range(self.epochs)):
@@ -847,13 +883,25 @@ class Trainer():
     def closure_watermark(self):
         self.optimizer.zero_grad()
         log_logits          = self.forward(self.x, self.edge_index, dropout=config.node_classifier_kwargs['dropout'])
-        self.loss_primary = F.nll_loss(log_logits[self.train_nodes_to_consider_mask], self.y[self.train_nodes_to_consider_mask])
-        self.compute_accuracy(log_logits, self.y, verbose=False)
         self.probas = log_logits.clone().exp()
         self.probas_dict = self.separate_forward_passes_per_subgraph()
+        if config.watermark_kwargs['watermark_type']=='unimportant' and self.epoch==config.watermark_kwargs['unimportant_selection_kwargs']['clf_only_epochs']:
+            self.subgraph_dict = self.apply_watermark_()
+        elif config.watermark_kwargs['watermark_type']!='unimportant' and self.epoch==0:
+            self.subgraph_dict = self.apply_watermark_()
 
-        if config.watermark_kwargs['watermark_type']=='fancy' and self.epoch==config.watermark_kwargs['fancy_selection_kwargs']['clf_only_epochs']:
-            self.subgraph_dict, self.all_watermark_indices, self.all_feature_importances = apply_fancy_watermark(self.num_features, self.subgraph_dict, self.probas, self.probas_dict)
+        self.loss_primary = F.nll_loss(log_logits[self.train_nodes_to_consider_mask], self.y[self.train_nodes_to_consider_mask])
+        self.compute_accuracy(log_logits, self.y, verbose=False)
+
+        #    self.subgraph_dict, self.each_subgraph_watermark_indices, self.each_subgraph_feature_importances = apply_watermark_at_unimportant_indices(self.num_features, self.subgraph_dict, self.probas, self.probas_dict)
+        # if config.
+    #if watermark_kwargs['watermark_type']=='basic':
+     #   subgraph_dict = apply_basic_watermark(num_features, subgraph_dict, watermark_kwargs)
+        # self.subgraph_dict, self.each_subgraph_watermark_indices, self.each_subgraph_feature_importances = apply_watermark(config.watermark_kwargs['watermark_type'], self.num_features, len_watermark, self.subgraph_dict, x=None, probas=None, probas_dict=None, watermark_kwargs=None)
+
+    #elif watermark_kwargs['watermark_type']=='most_represented':
+
+
 
         is_last_epoch = self.epoch==self.epochs-1
         self.loss_watermark, self.percent_matches = self.optimize_and_update_(is_last_epoch)
@@ -871,6 +919,39 @@ class Trainer():
             self.x_grad = torch.autograd.grad(self.loss_watermark_weighted, self.x, retain_graph=True)[0]
         self.backward(self.weighted_losses_backward, verbose=False, retain_graph=True)
         self.gn = update_gn(self.gn, self.weighted_losses, list(self.node_classifier.parameters()), verbose=False) # will only run if use_gradnorm=True
+
+
+
+    def apply_watermark_(self):#, watermark_type, num_features, len_watermark, subgraph_dict, x=None, probas=None, probas_dict=None, watermark_kwargs=None):
+        # each_subgraph_feature_importances=None
+        watermark_type = config.watermark_kwargs['watermark_type']
+        #if watermark_type=='unimportant':
+        #    selection_strategy = config.watermark_kwargs['selection_strategy']
+        len_watermark = int(config.watermark_kwargs['percent_of_features_to_watermark']*self.num_features/100)
+        subgraph_x_concat = torch.concat([self.subgraph_dict[k]['subgraph'].x for k in self.subgraph_dict.keys()])
+        subgraph_dict, self.each_subgraph_watermark_indices, self.each_subgraph_feature_importances = apply_watermark(watermark_type, self.num_features, len_watermark, self.subgraph_dict, subgraph_x_concat, self.probas, self.probas_dict, config.watermark_kwargs)
+        return subgraph_dict#, self.each_subgraph_watermark_indices, self.each_subgraph_feature_importances
+
+        # if watermark_type=='basic':
+        #     assert watermark_kwargs is not None
+        #     watermark = create_basic_watermarks(self.num_features, len_watermark, subgraph_dict, watermark_kwargs)
+        #     watermarks = [watermark]*len(subgraph_dict)
+        #     watermark_indices = torch.where(watermark!=0)[0]
+        #     each_subgraph_watermark_indices = [watermark_indices](len(subgraph_dict))
+        # else:
+        #     if watermark_type=='unimportant':# or watermark_type=='most_represented':
+        #         assert probas is not None
+        #         assert probas_dict is not None
+        #         watermarks, each_subgraph_watermark_indices, each_subgraph_feature_importances = create_watermarks_at_unimportant_indices(self.num_features, subgraph_dict, probas, probas_dict)
+        #     if watermark_type=='most_represented':
+        #         assert x is not None
+        #         most_represented_indices = select_most_represented_feature_indices(x, len_watermark)
+        #         watermarks = create_watermarks_at_most_represented_indices(len(subgraph_dict), len_watermark, num_features, most_represented_indices)
+        #         watermark_indices = torch.where(watermarks[0]!=0)[0]
+        #         each_subgraph_watermark_indices = [watermark_indices](len(subgraph_dict))
+        # for i, subgraph_sig in enumerate(subgraph_dict.keys()):
+        #     subgraph_dict[subgraph_sig]['watermark']=watermarks[i]
+        # return subgraph_dict, each_subgraph_watermark_indices, each_subgraph_feature_importances
 
 
 
@@ -905,13 +986,8 @@ class Trainer():
             probas_dict = self.separate_forward_passes_per_subgraph()
         else:
             probas_dict={}
-        subgraph_dict, self.all_watermark_indices, self.all_feature_importances = apply_fancy_watermark(self.num_features, subgraph_dict, probas, probas_dict)
-
-        # perturbed_indices = torch.tensor(list(set(np.concatenate(self.all_watermark_indices))))
-        # init_vals = torch.zeros_like(x[perturbed_indices])
-        # init_vals = init_vals.requires_grad_(True)
-        # torch.nn.init.xavier_uniform_(init_vals, gain=1e-2)
-        # x[perturbed_indices]= x[perturbed_indices] + init_vals
+        # subgraph_dict, self.each_subgraph_watermark_indices, self.each_subgraph_feature_importances = apply_watermark_at_unimportant_indices(self.num_features, subgraph_dict, probas, probas_dict)
+        subgraph_dict = self.apply_watermark_()
         for _ in range(100):
             optimizer.zero_grad()
             log_logits = node_classifier(x, self.edge_index, config.node_classifier_kwargs['dropout'])
@@ -937,18 +1013,12 @@ class Trainer():
                 grad_norms.append(grad_norm)
             print('grad_norms:',grad_norms)
             print('loss_watermark:',loss_watermark)
-
-            #print('x_grad:',torch.sum(x_grad))
-            # self.backward(loss_watermark, verbose=False, retain_graph=True)
             x = self.perturb_x(x, x_grad)
             self.perturbed_x = x
 
-            # print([subgraph_dict[s]['subgraph'].y for s in ])
-            #perturbed_indices = torch.tensor(list(set(np.concatenate(self.all_watermark_indices))))
-            #print('x_grad[perturbed_indices]:',x_grad[perturbed_indices])
             for i, sig in enumerate(subgraph_dict.keys()):
                 node_indices = subgraph_dict[sig]['nodeIndices']
-                subgraph_dict[sig]['subgraph'].x =  x[node_indices]
+                subgraph_dict[sig]['subgraph'].x = x[node_indices]
 
 
 
@@ -992,7 +1062,9 @@ class Trainer():
 
     def perturb_x(self, x, this_grad):
         perturbation = torch.zeros_like(self.data.x)
-        perturbed_indices = torch.tensor(list(set(np.concatenate(self.all_watermark_indices))))
+        perturbed_indices = self.all_subgraph_indices
+        # note: previously, it was perturbed_indices = torch.tensor(list(set(np.concatenate(self.each_subgraph_watermark_indices))))
+        # (but i think this was a mistake)
         perturbation[perturbed_indices] = -config.optimization_kwargs['perturb_lr']*this_grad[perturbed_indices]
         x = x + perturbation
         return x
@@ -1004,11 +1076,22 @@ class Trainer():
     # self.subgraph_dict[sig]['nodIndices_shfted']=subgraph_node_indices
 
     def optimize_and_update_(self, is_last_epoch):
+        
+        if config.optimization_kwargs['penalize_similar_subgraphs']==True:
+            for sig in self.subgraph_signatures:
+                subgraph_node_indices = self.subgraph_dict[sig]['nodeIndices']
+                shifted_subgraph, shifted_subgraph_node_indices = self.shift_subgraph(config.optimization_kwargs['p_swap'], subgraph_node_indices)
+                self.subgraph_dict[sig]['subgraph_shifted']=shifted_subgraph
+                self.subgraph_dict[sig]['nodeIndices_shifted']=shifted_subgraph_node_indices
+
 
         self.loss_watermark, self.beta_similarity, self.betas_from_every_subgraph, \
             self.betas_dict, self.beta_similarities_dict, self.percent_matches = optimize_and_update(self.probas, self.probas_dict, self.subgraph_dict, self.betas_dict, 
                                                                                       self.beta_similarities_dict, is_last_epoch,
-                                                                                      self.debug_multiple_subgraphs, self.beta_weights)
+                                                                                      self.debug_multiple_subgraphs, 
+                                                                                      self.beta_weights,
+                                                                                      penalize_similar_subgraphs=config.optimization_kwargs['penalize_similar_subgraphs'],
+                                                                                      shifted_subgraph_loss_coef=config.optimization_kwargs['shifted_subgraph_loss_coef'])
         return self.loss_watermark, self.percent_matches
 
     def shift_subgraph(self, p_to_swap, subgraph_node_indices):
@@ -1073,6 +1156,7 @@ def update_history_one_epoch(history, loss, loss_dict, acc_trn, acc_val, percent
 
 
 def gather_random_subgraphs_for_testing(data, dataset_name, 
+                                        subgraph_method_choices = ['khop','random','random_walk_with_restart'],
                                         max_degrees_choices=[20,50,100], 
                                         frac_choices = [0.001,0.004,0.005,0.01], 
                                         restart_prob_choices = [0,0.1,0.2], 
@@ -1093,7 +1177,7 @@ def gather_random_subgraphs_for_testing(data, dataset_name,
     avoid_indices = []
     subgraphs = []
     for i in range(num_):
-        subgraph_kwargs_['method'] = np.random.choice(['khop','random','random_walk_with_restart'])
+        subgraph_kwargs_['method'] = np.random.choice(subgraph_method_choices)
         if overrule_size_info==False:
             fraction = subgraph_kwargs_['fraction'] = np.random.choice(frac_choices)
             num_watermarked_nodes = int(fraction*sum(data.train_mask))
@@ -1226,34 +1310,75 @@ def final_plot(history, display_title, percent_matches, primary_loss_curve, wate
         print(); print()
 
 
-def get_betas_wmk_and_random(subgraph_dict_wmk, random_subgraphs, probas):
+def get_betas_wmk_and_random(trained_node_classifier, subgraph_dict_wmk, random_subgraphs):#, probas):
     betas_wmk_raw__ = []
     betas_wmk__ = []
     for subgraph_sig in subgraph_dict_wmk.keys():
-        x_sub = subgraph_dict_wmk[subgraph_sig]['subgraph'].x
-        y_sub = probas[subgraph_dict_wmk[subgraph_sig]['nodeIndices']]
-        beta = solve_regression(x_sub, y_sub).clone().detach()
-        betas_wmk_raw__.append(beta)
-        betas_wmk__.append(torch.sign(beta))
+        sub = subgraph_dict_wmk[subgraph_sig]['subgraph']
+        x_sub, edge_index_sub = sub.x, sub.edge_index
+        trained_node_classifier.eval()
+        log_logits = trained_node_classifier(x_sub,edge_index_sub)
+        #y_sub = probas[subgraph_dict_wmk[subgraph_sig]['nodeIndices']]
+        y_sub = log_logits.exp()
+        this_raw_beta = solve_regression(x_sub, y_sub, config.regression_kwargs['lambda']).clone().detach()
+        this_sign_beta       = torch.sign(this_raw_beta)
+        betas_wmk_raw__.append(this_raw_beta)
+        betas_wmk__.append(this_sign_beta)
+
 
     betas_random_raw__ = []
     betas_random__ = []
-    for (subgraph,node_indices) in random_subgraphs:
+    for (subgraph,_) in random_subgraphs:
         x_sub = subgraph.x
-        y_sub = probas[node_indices]
-        beta = solve_regression(x_sub, y_sub).clone().detach()
+        edge_index = subgraph.edge_index
+        trained_node_classifier.eval()
+        log_logits_sub = trained_node_classifier(x_sub, edge_index)
+        y_sub = log_logits_sub.clone().exp()
+        # y_sub = probas[node_indices]
+        beta = solve_regression(x_sub, y_sub, config.regression_kwargs['lambda']).clone().detach()
         betas_random_raw__.append(beta)
         betas_random__.append(torch.sign(beta))
 
     return [betas_wmk_raw__, betas_wmk__], [betas_random_raw__, betas_random__]
+
+# def get_betas_wmk_and_random(trained_node_classifier, subgraph_dict_wmk, random_subgraphs):#, probas):
+#     betas_wmk_raw__ = []
+#     betas_wmk__ = []
+#     for subgraph_sig in subgraph_dict_wmk.keys():
+#         x_sub = subgraph_dict_wmk[subgraph_sig]['subgraph'].x
+#         edge_index = subgraph_dict_wmk[subgraph_sig]['subgraph'].edge_index
+#         #y_sub = probas[subgraph_dict_wmk[subgraph_sig]['nodeIndices']]
+#         trained_node_classifier.eval()
+#         log_logits_sub = trained_node_classifier(x_sub, edge_index)
+#         y_sub = probas_sub = log_logits_sub.clone().exp()
+#         beta = solve_regression(x_sub, y_sub).clone().detach()
+#         betas_wmk_raw__.append(beta)
+#         betas_wmk__.append(torch.sign(beta))
+
+#     betas_random_raw__ = []
+#     betas_random__ = []
+#     for (subgraph,_) in random_subgraphs:
+#         x_sub = subgraph.x
+#         edge_index = subgraph.edge_index
+#         # y_sub = probas[node_indices]
+#         trained_node_classifier.eval()
+#         log_logits_sub = trained_node_classifier(x_sub, edge_index)
+#         y_sub = probas_sub = log_logits_sub.clone().exp()
+#         beta = solve_regression(x_sub, y_sub).clone().detach()
+#         betas_random_raw__.append(beta)
+#         betas_random__.append(torch.sign(beta))
+
+#     return [betas_wmk_raw__, betas_wmk__], [betas_random_raw__, betas_random__]
 
 def compute_likelihood_of_matches(subgraph_dict_wmk, random_subgraphs, betas_wmk__, betas_random__, sample_size=1000):
     n = len(subgraph_dict_wmk)
     print(f'Computing # matches in groups of {n} beta tensors...')
 
     ''' random subgraphs '''
-    n_tuplets = list(itertools.combinations(range(len(random_subgraphs)), n))
-    n_tuplets = random.sample(n_tuplets, sample_size)
+    # n_tuplets = list(itertools.combinations(range(len(random_subgraphs)), n))
+    # n_tuplets = random.sample(n_tuplets, sample_size)
+    n_tuplets = np.random.choice(range(len(random_subgraphs)), (sample_size, n), replace=True)
+
     match_counts = []
     for i in range(len(n_tuplets)):
         print(f'{i}/{len(n_tuplets)}',end='\r')
@@ -1279,6 +1404,7 @@ def compute_likelihood_of_matches(subgraph_dict_wmk, random_subgraphs, betas_wmk
 def show_beta_matches_wmk_and_random(subgraph_dict_wmk, betas_wmk__, betas_random__):
     sig = list(subgraph_dict_wmk.keys())[0]
     watermark = subgraph_dict_wmk[sig]['watermark']
+    x_sub = subgraph_dict_wmk[sig]['subgraph'].x
     n = len(torch.where(watermark!=0)[0])
     betas_list = [betas_wmk__, betas_random__[:len(betas_wmk__)]]
     for (type_,betas) in zip(['Watermarked','Random'],betas_list):
@@ -1361,10 +1487,10 @@ def process_grid_combination(data, dataset_name, debug_multiple_subgraphs, all_d
             config.optimization_kwargs['sacrifice_kwargs']['percentage']= percentage
             continue_=True
         return continue_
-    def set_selection_kwargs(evaluate_individually, multi_subg_strategy, selection_strategy):
-        config.watermark_kwargs['fancy_selection_kwargs']['evaluate_individually']=evaluate_individually
-        config.watermark_kwargs['fancy_selection_kwargs']['multi_subg_strategy']=multi_subg_strategy
-        config.watermark_kwargs['fancy_selection_kwargs']['selection_strategy']=selection_strategy
+    def set_selection_kwargs(evaluate_individually, multi_subg_strategy):#, selection_strategy):
+        config.watermark_kwargs['unimportant_selection_kwargs']['evaluate_individually']=evaluate_individually
+        config.watermark_kwargs['unimportant_selection_kwargs']['multi_subg_strategy']=multi_subg_strategy
+        # config.watermark_kwargs['unimportant_selection_kwargs']['selection_strategy']=selection_strategy
     def set_pcgrad(boolean_value):
         config.optimization_kwargs['use_pcgrad']=boolean_value
     def set_subraph_method(method,regenerate):
@@ -1373,12 +1499,12 @@ def process_grid_combination(data, dataset_name, debug_multiple_subgraphs, all_d
     def set_reg_kwargs(reg_kwargs):
         config.optimization_kwargs = update_dict(config.optimization_kwargs,['regularization_type', 'lambda_l2'],reg_kwargs)
     def set_perc(perc):
-        if config.watermark_kwargs['watermark_type']=='fancy':
-            config.watermark_kwargs['fancy_selection_kwargs']['percent_of_features_to_watermark']=perc
-        elif config.watermark_kwargs['watermark_type']=='basic':
-            config.watermark_kwargs['p_remove']=1-0.01*perc
+        #if config.watermark_kwargs['watermark_type']=='unimportant':
+        config.watermark_kwargs['percent_of_features_to_watermark']=perc
+        #elif config.watermark_kwargs['watermark_type']=='basic':
+        #    config.watermark_kwargs['p_remove']=1-0.01*perc
     def set_clf_epochs(clf_epochs):
-        config.watermark_kwargs['fancy_selection_kwargs']['clf_only_epochs']=clf_epochs
+        config.watermark_kwargs['unimportant_selection_kwargs']['clf_only_epochs']=clf_epochs
     def set_frac(frac):
         config.subgraph_kwargs['fraction']=frac
     def set_coef_wmk(coef_wmk):

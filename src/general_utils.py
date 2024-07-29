@@ -33,28 +33,28 @@ def count_matches(features):
             num_matches += 1
     return num_matches
 
-def describe_selection_config(#data, 
-                              num_features,
-                              watermark_kwargs, subgraph_dict):
-    use_unimpt  = watermark_kwargs['fancy_selection_kwargs']['selection_strategy']=='unimportant'
-    use_rand    = watermark_kwargs['fancy_selection_kwargs']['selection_strategy']=='random'
-    use_concat  = watermark_kwargs['fancy_selection_kwargs']['multi_subg_strategy']=='concat'
-    use_avg     = watermark_kwargs['fancy_selection_kwargs']['multi_subg_strategy']=='average'
-    use_indiv   = watermark_kwargs['fancy_selection_kwargs']['evaluate_individually']
+def describe_selection_config(num_features,watermark_kwargs, subgraph_dict):
+    watermark_type = watermark_kwargs['watermark_type']
+    # use_unimpt  = watermark_kwargs['fancy_selection_kwargs']['selection_strategy']=='unimportant'
+    # use_rand    = watermark_kwargs['fancy_selection_kwargs']['selection_strategy']=='random'
+    use_concat  = watermark_kwargs['unimportant_selection_kwargs']['multi_subg_strategy']=='concat'
+    use_avg     = watermark_kwargs['unimportant_selection_kwargs']['multi_subg_strategy']=='average'
+    use_indiv   = watermark_kwargs['unimportant_selection_kwargs']['evaluate_individually']
     
     num_subgraphs=len(subgraph_dict)
-    perc        = watermark_kwargs['fancy_selection_kwargs']['percent_of_features_to_watermark']
-    num_indices = int(perc*num_features/100)
+    perc        = watermark_kwargs['percent_of_features_to_watermark']
+    len_watermark = int(perc*num_features/100)
 
     message=None
     end_tag = ', single subgraph' if num_subgraphs==1 else ', individualized for each subgraph' if (num_subgraphs>1 and use_indiv) else ', uniformly across subgraphs' if (num_subgraphs>1 and not use_indiv) else ''
-    if use_unimpt:
-        beta_tag = 'beta from single subgraph' if (num_subgraphs==1) else 'betas' if (num_subgraphs>1 and use_indiv) else 'betas from concatenated subgraphs' if (num_subgraphs>1 and not use_indiv and use_concat) else 'averaged betas from subgraphs' if (num_subgraphs>1 and use_unimpt and not use_indiv and use_avg) else ''
-        message = 'Using ' + beta_tag + f' to identify bottom {perc}% of important feature indices for watermarking' + end_tag
-    if use_rand:
+    if watermark_type=='basic':
         message = f"Selecting random {perc}% of feature indices for watermarking" + end_tag 
-
-    return use_unimpt, use_rand, use_concat, use_avg, use_indiv, num_subgraphs, num_indices, message
+    if watermark_type=='unimportant':
+        beta_tag = 'beta from single subgraph' if (num_subgraphs==1) else 'betas' if (num_subgraphs>1 and use_indiv) else 'betas from concatenated subgraphs' if (num_subgraphs>1 and not use_indiv and use_concat) else 'averaged betas from subgraphs' if (num_subgraphs>1 and watermark_type=='unimportant' and not use_indiv and use_avg) else ''
+        message = 'Using ' + beta_tag + f' to identify bottom {perc}% of important feature indices for watermarking' + end_tag
+    if watermark_type=='most_represented':
+        message = f'Selecting {perc}% of most-represented feature indices for watermarking' + end_tag
+    return use_concat, use_avg, use_indiv, num_subgraphs, len_watermark, message
 
 def get_augment_tag():#augment_kwargs):
     augment_kwargs = config.augment_kwargs
@@ -98,6 +98,11 @@ def get_optimization_tag():#optimization_kwargs):
         tag += f'_{optimization_kwargs["regularization_type"]}'
         if optimization_kwargs['regularization_type']=='L2':
             tag += f'_lambdaL2{optimization_kwargs["lambda_l2"]}'
+    if optimization_kwargs['penalize_similar_subgraphs']==True:
+        p_swap = optimization_kwargs['p_swap']
+        coef = optimization_kwargs['shifted_subgraph_loss_coef']
+        tag += f'_penalizeSimilar{p_swap}X{coef}'                      
+
     return tag
 
 def get_regression_tag():##regression_kwargs):
@@ -160,21 +165,27 @@ def get_watermark_tag(#watermark_kwargs,
 
     if single_or_multi_graph == 'multi':
         wmk_tag = f'pGraphs{pGraphs}_' + wmk_tag
+    percent_wmk = watermark_kwargs['percent_of_features_to_watermark']
+    wmk_tag += f'_{percent_wmk}%'
 
-    if watermark_kwargs['watermark_type']=='fancy':
-        percent_wmk = watermark_kwargs['fancy_selection_kwargs']['percent_of_features_to_watermark']
-        strategy = watermark_kwargs['fancy_selection_kwargs']['selection_strategy'].capitalize()
-        wmk_tag += f'_{percent_wmk}%{strategy}Indices'
-        if watermark_kwargs['fancy_selection_kwargs']['evaluate_individually']:
+    if watermark_kwargs['watermark_type']=='basic':
+        wmk_tag +='BasicIndices'
+
+    elif watermark_kwargs['watermark_type']=='unimportant':
+        wmk_tag +='UnimptIndices'
+        #strategy = watermark_kwargs['fancy_selection_kwargs']['selection_strategy'].capitalize()
+        if watermark_kwargs['unimportant_selection_kwargs']['evaluate_individually']:
             handle_multiple = 'individualized'
         else:
-            handle_multiple = watermark_kwargs['fancy_selection_kwargs']['multi_subg_strategy']
+            handle_multiple = watermark_kwargs['unimportant_selection_kwargs']['multi_subg_strategy']
         wmk_tag += f'_{handle_multiple}'
-        wmk_tag += f'_{watermark_kwargs['fancy_selection_kwargs']['clf_only_epochs']}ClfEpochs'
+        wmk_tag += f'_{watermark_kwargs['unimportant_selection_kwargs']['clf_only_epochs']}ClfEpochs'
 
-    elif watermark_kwargs['watermark_type']=='basic':
-        percent_wmk = np.round(100 * (1 - watermark_kwargs['basic_selection_kwargs']['p_remove']), 3)
-        wmk_tag += f'_{percent_wmk}%BasicIndices'
+    elif watermark_kwargs['watermark_type']=='most_represented':
+        wmk_tag +='MostRepIndices'
+
+        #percent_wmk = np.round(100 * (1 - watermark_kwargs['basic_selection_kwargs']['p_remove']), 3)
+    #    wmk_tag += f'_{percent_wmk}%BasicIndices'
     
     return wmk_tag
 
