@@ -1080,7 +1080,7 @@ class Trainer():
         if config.optimization_kwargs['penalize_similar_subgraphs']==True:
             for sig in self.subgraph_signatures:
                 subgraph_node_indices = self.subgraph_dict[sig]['nodeIndices']
-                shifted_subgraph, shifted_subgraph_node_indices = self.shift_subgraph(config.optimization_kwargs['p_swap'], subgraph_node_indices)
+                shifted_subgraph, shifted_subgraph_node_indices = self.shift_subgraph_(config.optimization_kwargs['p_swap'], subgraph_node_indices)
                 self.subgraph_dict[sig]['subgraph_shifted']=shifted_subgraph
                 self.subgraph_dict[sig]['nodeIndices_shifted']=shifted_subgraph_node_indices
 
@@ -1094,25 +1094,84 @@ class Trainer():
                                                                                       shifted_subgraph_loss_coef=config.optimization_kwargs['shifted_subgraph_loss_coef'])
         return self.loss_watermark, self.percent_matches
 
-    def shift_subgraph(self, p_to_swap, subgraph_node_indices):
-        num_to_swap = int(p_to_swap*len(subgraph_node_indices))
-        random_indices = torch.randperm(len(subgraph_node_indices))
-        subgraph_node_indices = subgraph_node_indices[random_indices[:len(subgraph_node_indices)-num_to_swap]]
-        filtered_tensor = self.train_nodes_to_consider[~self.train_nodes_to_consider.unsqueeze(1).eq(subgraph_node_indices).any(dim=1)]
-        random_index = torch.randint(0, filtered_tensor.size(0), (num_to_swap,))
-        random_element = filtered_tensor[random_index]
-        subgraph_node_indices = torch.concatenate([subgraph_node_indices, random_element])
+    def shift_subgraph_(self, p_to_swap, subgraph_node_indices):
+        train_nodes_to_consider = self.train_nodes_to_consider
+        data = self.data
+        return shift_subgraph(p_to_swap, subgraph_node_indices, train_nodes_to_consider, data)
+        # num_to_swap = int(p_to_swap*len(subgraph_node_indices))
+        # random_indices = torch.randperm(len(subgraph_node_indices))
+        # subgraph_node_indices = subgraph_node_indices[random_indices[:len(subgraph_node_indices)-num_to_swap]]
+        # filtered_tensor = self.train_nodes_to_consider[~self.train_nodes_to_consider.unsqueeze(1).eq(subgraph_node_indices).any(dim=1)]
+        # random_index = torch.randint(0, filtered_tensor.size(0), (num_to_swap,))
+        # random_element = filtered_tensor[random_index]
+        # subgraph_node_indices = torch.concatenate([subgraph_node_indices, random_element])
 
-        sub_edge_index, _ = subgraph(subgraph_node_indices, self.data.edge_index, relabel_nodes=True, num_nodes=self.data.num_nodes)
-        shifted_subgraph = Data(
-            x          = self.data.x[subgraph_node_indices]          if self.data.x is not None else None,
-            edge_index = sub_edge_index,
-            y          = self.data.y[subgraph_node_indices]          if self.data.y is not None else None,
-            train_mask = self.data.train_mask[subgraph_node_indices] if self.data.train_mask is not None else None,
-            test_mask  = self.data.test_mask[subgraph_node_indices]  if self.data.test_mask is not None else None,
-            val_mask   = self.data.val_mask[subgraph_node_indices]   if self.data.val_mask is not None else None)
-        return shifted_subgraph, subgraph_node_indices
+        # sub_edge_index, _ = subgraph(subgraph_node_indices, self.data.edge_index, relabel_nodes=True, num_nodes=self.data.num_nodes)
+        # shifted_subgraph = Data(
+        #     x          = self.data.x[subgraph_node_indices]          if self.data.x is not None else None,
+        #     edge_index = sub_edge_index,
+        #     y          = self.data.y[subgraph_node_indices]          if self.data.y is not None else None,
+        #     train_mask = self.data.train_mask[subgraph_node_indices] if self.data.train_mask is not None else None,
+        #     test_mask  = self.data.test_mask[subgraph_node_indices]  if self.data.test_mask is not None else None,
+        #     val_mask   = self.data.val_mask[subgraph_node_indices]   if self.data.val_mask is not None else None)
+        # return shifted_subgraph, subgraph_node_indices
 
+
+
+def shift_subgraph(p_to_swap, subgraph_node_indices, train_nodes_to_consider, data):
+    num_to_swap = int(p_to_swap*len(subgraph_node_indices))
+    random_indices = torch.randperm(len(subgraph_node_indices))
+    subgraph_node_indices = subgraph_node_indices[random_indices[:len(subgraph_node_indices)-num_to_swap]]
+    filtered_tensor = train_nodes_to_consider[~train_nodes_to_consider.unsqueeze(1).eq(subgraph_node_indices).any(dim=1)]
+    random_index = torch.randint(0, filtered_tensor.size(0), (num_to_swap,))
+    random_element = filtered_tensor[random_index]
+    subgraph_node_indices = torch.concatenate([subgraph_node_indices, random_element])
+
+    sub_edge_index, _ = subgraph(subgraph_node_indices, data.edge_index, relabel_nodes=True, num_nodes=data.num_nodes)
+    shifted_subgraph = Data(
+        x          = data.x[subgraph_node_indices]          if data.x is not None else None,
+        edge_index = sub_edge_index,
+        y          = data.y[subgraph_node_indices]          if data.y is not None else None,
+        train_mask = data.train_mask[subgraph_node_indices] if data.train_mask is not None else None,
+        test_mask  = data.test_mask[subgraph_node_indices]  if data.test_mask is not None else None,
+        val_mask   = data.val_mask[subgraph_node_indices]   if data.val_mask is not None else None)
+    return shifted_subgraph, subgraph_node_indices
+
+
+
+
+def test_robustness_to_node_similar_subgraphs(node_classifier, data, subgraph_dict, verbose=True):
+    all_subgraph_node_indices = []
+    for sig in subgraph_dict.keys():
+        nodeIndices = subgraph_dict[sig]['nodeIndices'].tolist()
+        all_subgraph_node_indices += nodeIndices
+    all_subgraph_indices = torch.tensor(all_subgraph_node_indices)
+    sacrifice_method = config.optimization_kwargs['sacrifice_kwargs']['method']
+    size_dataset = data.x.shape[0]
+    train_nodes_to_use_mask = get_train_nodes_to_consider(data, subgraph_dict, all_subgraph_indices, sacrifice_method, size_dataset)
+    averages = []
+    for p_to_swap in [0,0.05,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.75,0.8,0.85,0.9,0.95,1]:
+        percent_matches=[]
+        for s, sig in enumerate(subgraph_dict.keys()):
+            subgraph_node_indices = subgraph_dict[sig]['nodeIndices']
+            shifted_subgraph, _ = shift_subgraph(p_to_swap, subgraph_node_indices,train_nodes_to_use_mask, data)
+            ignore_zeros_from_subgraphs=False
+            this_watermark = subgraph_dict[sig]['watermark']
+            x_sub, edge_index_sub = shifted_subgraph.x, shifted_subgraph.edge_index
+            node_classifier.eval()
+            log_logits = node_classifier(x_sub,edge_index_sub)
+            y_sub = log_logits.exp()
+            _,not_omit_indices = get_omit_indices(x_sub, this_watermark,ignore_zeros_from_subgraphs=ignore_zeros_from_subgraphs) #indices where watermark is 0
+            this_raw_beta = solve_regression(x_sub, y_sub, config.regression_kwargs['lambda'])
+            watermark_non_zero   = this_watermark[not_omit_indices]
+            this_sign_beta       = torch.sign(this_raw_beta[not_omit_indices])
+            this_matches = len(torch.where(this_sign_beta==watermark_non_zero)[0])
+            this_percent_match = 100*this_matches/len(watermark_non_zero)
+            percent_matches.append(this_percent_match)
+        if verbose:
+            print('p:',p_to_swap,'avg % match:',np.mean(percent_matches))
+        averages.append(np.mean(percent_matches))
+    return averages
 
 def update_history_one_epoch(history, loss, loss_dict, acc_trn, acc_val, percent_matches, x_perturbed):
     try:
@@ -1318,7 +1377,6 @@ def get_betas_wmk_and_random(trained_node_classifier, subgraph_dict_wmk, random_
         x_sub, edge_index_sub = sub.x, sub.edge_index
         trained_node_classifier.eval()
         log_logits = trained_node_classifier(x_sub,edge_index_sub)
-        #y_sub = probas[subgraph_dict_wmk[subgraph_sig]['nodeIndices']]
         y_sub = log_logits.exp()
         this_raw_beta = solve_regression(x_sub, y_sub, config.regression_kwargs['lambda']).clone().detach()
         this_sign_beta       = torch.sign(this_raw_beta)
@@ -1334,7 +1392,6 @@ def get_betas_wmk_and_random(trained_node_classifier, subgraph_dict_wmk, random_
         trained_node_classifier.eval()
         log_logits_sub = trained_node_classifier(x_sub, edge_index)
         y_sub = log_logits_sub.clone().exp()
-        # y_sub = probas[node_indices]
         beta = solve_regression(x_sub, y_sub, config.regression_kwargs['lambda']).clone().detach()
         betas_random_raw__.append(beta)
         betas_random__.append(torch.sign(beta))
@@ -1370,35 +1427,68 @@ def get_betas_wmk_and_random(trained_node_classifier, subgraph_dict_wmk, random_
 
 #     return [betas_wmk_raw__, betas_wmk__], [betas_random_raw__, betas_random__]
 
-def compute_likelihood_of_matches(subgraph_dict_wmk, random_subgraphs, betas_wmk__, betas_random__, sample_size=1000):
-    n = len(subgraph_dict_wmk)
-    print(f'Computing # matches in groups of {n} beta tensors...')
+# desired_p_value = 0.05
+# sample_size = 3000
+# n = len(subgraph_dict_wmk)
+# n_tuplets = np.random.choice(range(len(random_subgraphs)), (sample_size, n), replace=True)
+# match_counts, sample_mean, sample_std = get_matches_distribution(betas_random__, n_tuplets, verbose=True)
+# real_world_value = get_necessary_number_of_matches(sample_mean, sample_std, sample_size, desired_p_value, verbose=True)
+# # print(f"# matches needed across {n} for p-value={desired_p_value}: {real_world_value:.4f}")
+# test_value, t_score, p_value = compute_likelihood_of_observed_matches(betas_wmk__, verbose=True)
+# # print(f'\nPopulation Mean, Std: {np.round(sample_mean,3)}, {np.round(sample_std,3)}')
+# # print(f'# Matches among the {n} watermarked betas: {test_value}\n')
+# # print(f't_score = {np.round(t_score,3)}, p-value = {np.round(p_value,5)}')
 
-    ''' random subgraphs '''
-    # n_tuplets = list(itertools.combinations(range(len(random_subgraphs)), n))
-    # n_tuplets = random.sample(n_tuplets, sample_size)
-    n_tuplets = np.random.choice(range(len(random_subgraphs)), (sample_size, n), replace=True)
+# match_counts, sample_mean_matches, sample_std_matches = get_matches_distribution(betas_random__, n_tuplets, verbose=True)
+# test_value, t_score, p_value = compute_likelihood_of_observed_matches(betas_wmk__, sample_mean_matches, sample_std_matches, sample_size=1000, verbose=True)
+# matches_required = get_necessary_number_of_matches(sample_mean_matches, sample_std_matches, desired_p_value, n, num_features, verbose=True)
+# changes_needed = calculate_required_watermark_size(sample_mean_matches, sample_std_matches, matches_required, desired_p_level)
 
+
+
+def get_matches_distribution(betas_random__, n_tuplets, verbose=False):
+    if verbose:
+        print(f'Computing # matches in groups of {len(n_tuplets[0])} beta tensors...')
+    n = len(n_tuplets)
     match_counts = []
-    for i in range(len(n_tuplets)):
-        print(f'{i}/{len(n_tuplets)}',end='\r')
+    for i in range(n):
+        if verbose:
+            print(f'{i}/{len(n_tuplets)}',end='\r')
         bs = torch.vstack([betas_random__[j] for j in n_tuplets[i]])
         match_counts.append(count_matches(bs))
-    sample_mean = np.mean(match_counts)
-    sample_std = np.std(match_counts)
+    sample_mean_matches = np.mean(match_counts)
+    sample_std_matches = np.std(match_counts, ddof=1)
+    return match_counts, sample_mean_matches, sample_std_matches
 
+def get_necessary_number_of_matches(sample_mean_matches, sample_std_matches, desired_p_value, n, verbose=False):
+    desired_p_value = 0.05
+    critical_z = stats.norm.ppf(1 - desired_p_value)
+    matches_required = sample_mean_matches + (critical_z * sample_std_matches)
+    matches_required = int(np.ceil(matches_required))
+    if verbose:
+        print(f"To obtain p-value={desired_p_value}, need {matches_required} matches needed across {n} sign(beta) tensors")
+    return matches_required
+
+def compute_likelihood_of_observed_matches(betas_wmk__, sample_mean_matches, sample_std_matches, verbose=False):
     ''' watermarked-subgraphs '''
-    n_tuplets = list(itertools.combinations(range(len(subgraph_dict_wmk)), n))
     bs = torch.vstack(betas_wmk__)
-    test_value = count_matches(bs[:n])                 
-    t_score = (test_value - sample_mean)/(sample_std)
-    p_value = 1 - stats.t.cdf(t_score, df=sample_size-1)
+    test_value = count_matches(bs)                 
+    z_score = (test_value - sample_mean_matches)/sample_std_matches
+    p_value = 1 - stats.norm.cdf(z_score)
+    if verbose:
+        print(f'\nPopulation Mean, Standard Error: {np.round(sample_mean_matches,3)}, {np.round(sample_std_matches,3)}')
+        print(f'# Matches among the {len(bs)} watermarked betas: {test_value}\n')
+        print(f'z_score = {np.round(z_score,3)}, p-value = {np.round(p_value,5)}')
+    return test_value, z_score, p_value
 
-    print(f'\nPopulation Mean, Std: {np.round(sample_mean,3)}, {np.round(sample_std,3)}')
-    print(f'# Matches among the {n} watermarked betas: {test_value}\n')
-    print(f't_score = {np.round(t_score,3)}, p-value = {np.round(p_value,5)}')
-
-    return test_value, t_score, p_value, match_counts
+def calculate_recommended_watermark_size(sample_mean_matches, matches_required, desired_p_value, num_features, verbose=False):
+    z_desired = stats.norm.ppf(1 - desired_p_value)
+    # recommended_watermark_size = (matches_required - sample_mean_matches) / sample_std_matches + z_desired * np.sqrt(matches_required)
+    recommended_watermark_size = (matches_required - sample_mean_matches) + z_desired * np.sqrt(matches_required)
+    recommended_watermark_size = int(np.ceil(recommended_watermark_size))
+    if verbose==True:
+        print(f'Recommended watermark size: at least {recommended_watermark_size} (i.e., {np.round(100*matches_required/num_features,3)}% of node feature indices)')
+    return recommended_watermark_size
 
 
 def show_beta_matches_wmk_and_random(subgraph_dict_wmk, betas_wmk__, betas_random__):
