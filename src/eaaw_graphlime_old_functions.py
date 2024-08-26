@@ -251,3 +251,107 @@ def normalize_features(features):
     std = features.std(dim=0, keepdim=True) + 1e-10  # to avoid division by zero
     normalized_features = (features - mean) / std
     return normalized_features
+
+def filter_out_zero_features_from_unimportant_indices(unimportant_indices, subgraph_dict, watermark_kwargs):
+    # Step 2: Filter out indices that are in zero_features_across_subgraphs
+    sample_data = subgraph_dict[list(subgraph_dict.keys())[0]]['subgraph']
+    num_features = sample_data.x.shape[1]
+    features_all_subgraphs = torch.vstack([subgraph_dict[subgraph_central_node]['subgraph'].x for subgraph_central_node in subgraph_dict.keys()]).squeeze()
+    zero_features_across_subgraphs = torch.where(torch.sum(features_all_subgraphs, dim=0) == 0)[0]
+
+    filtered_unimportant_indices = [i for i in unimportant_indices if i not in zero_features_across_subgraphs]
+
+    # Step 3: Ensure the number of unimportant indices remains the same
+    num_unimportant_indices_needed = len(unimportant_indices)
+    if len(filtered_unimportant_indices) < num_unimportant_indices_needed:
+        remaining_indices = [i for i in range(num_features) if i not in filtered_unimportant_indices and i not in zero_features_across_subgraphs]
+        additional_unimportant_indices = np.random.choice(remaining_indices, num_unimportant_indices_needed - len(filtered_unimportant_indices), replace=False)
+        filtered_unimportant_indices = np.concatenate((filtered_unimportant_indices, additional_unimportant_indices))
+    
+    filtered_unimportant_indices = torch.tensor(filtered_unimportant_indices)
+    return filtered_unimportant_indices
+
+
+
+
+def select_indices_of_present_features(current_indices, num_indices, zero_features):
+    indices = []
+    i=0
+    while len(indices)<num_indices:
+        if current_indices[i] not in zero_features:
+            try:
+                indices.append(current_indices[i].item())
+            except:
+                indices.append(current_indices[i])
+        i +=1 
+    return torch.tensor(indices)
+
+
+def compute_feature_variability_weights(data_objects):
+    variablities = []
+    for data_obj in data_objects:
+        std_devs = data_obj.x.std(dim=0)
+        variablity = std_devs#.mean()
+        variablities.append(variablity)
+    variablities = torch.vstack(variablities)
+    weights = 1 / (variablities + 1e-10)
+    return weights
+
+
+# a method for the Trainer class
+def test_perturb_x(self):
+    node_classifier = copy.deepcopy(self.node_classifier)
+    optimizer = copy.deepcopy(self.optimizer)
+    subgraph_dict = copy.deepcopy(self.subgraph_dict)
+    betas_dict = copy.deepcopy(self.betas_dict)
+    beta_similarities_dict = copy.deepcopy(self.beta_similarities_dict)
+    debug_multiple_subgraphs = False 
+    beta_weights = copy.deepcopy(self.beta_weights)
+    percent_matches = [[]]*config.subgraph_kwargs['numSubgraphs']
+    optimizer.zero_grad()
+    x = self.x.clone()
+    x = x.requires_grad_(True)
+    log_logits = node_classifier(x, self.edge_index, config.node_classifier_kwargs['dropout'])
+    probas = log_logits.clone().exp()
+    if config.optimization_kwargs['separate_forward_passes_per_subgraph']==True:
+        probas_dict = self.separate_forward_passes_per_subgraph()
+    else:
+        probas_dict={}
+    subgraph_dict = self.apply_watermark_()
+    for _ in range(100):
+        optimizer.zero_grad()
+        log_logits = node_classifier(x, self.edge_index, config.node_classifier_kwargs['dropout'])
+        probas = log_logits.clone().exp()
+        if config.optimization_kwargs['separate_forward_passes_per_subgraph']==True:
+            probas_dict = self.separate_forward_passes_per_subgraph()
+        else:
+            probas_dict={}
+        node_classifier.eval()
+        optimizer.zero_grad()
+        loss_watermark,percent_matches = self.optimize_watermark_and_update_dicts(probas, probas_dict, subgraph_dict, betas_dict, 
+                                                                                    beta_similarities_dict, False,
+                                                                                    debug_multiple_subgraphs, beta_weights, 
+                                                                                    [])
+        print("percent matches:",percent_matches)
+        x_grad = torch.autograd.grad(loss_watermark, x, retain_graph=True)[0]
+        grad_norms = []
+        for sig in subgraph_dict:
+            indices = subgraph_dict[sig]['nodeIndices']
+            x_grad_narrow = x_grad[indices]
+            grad_norm = np.round(torch.norm(x_grad_narrow).item(),5)
+            grad_norms.append(grad_norm)
+        print('grad_norms:',grad_norms)
+        print('loss_watermark:',loss_watermark)
+        x = self.perturb_x(x, x_grad)
+        self.perturbed_x = x
+        for i, sig in enumerate(subgraph_dict.keys()):
+            node_indices = subgraph_dict[sig]['nodeIndices']
+            subgraph_dict[sig]['subgraph'].x = x[node_indices]
+
+# a method for the Trainer class
+def perturb_x(self, x, this_grad):
+    perturbation = torch.zeros_like(self.data.x)
+    perturbed_indices = self.all_subgraph_indices
+    perturbation[perturbed_indices] = -config.optimization_kwargs['perturb_lr']*this_grad[perturbed_indices]
+    x = x + perturbation
+    return x

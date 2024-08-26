@@ -5,7 +5,6 @@ import torch.nn.functional as F
 
 from torch_geometric.nn import GATConv, GCNConv, GraphConv, SAGEConv
 
-torch.manual_seed(2)
 
 
 class GAT(nn.Module):
@@ -241,7 +240,6 @@ class SAGE(torch.nn.Module):
 class Net(torch.nn.Module):
     def __init__(self, **model_kwargs):
         super(Net, self).__init__()
-# def Net(model_kwargs):
         inDim = model_kwargs['inDim'] 
         hDim = model_kwargs['hDim']
         outDim = model_kwargs['outDim']
@@ -285,22 +283,6 @@ class Net(torch.nn.Module):
             x = torch.cat(intermediate_outputs, dim=-1)
             x = self.lin(x)
         return F.log_softmax(x, dim=1)
-
-
-    # architecture, activation, inDim, hDim, outDim, nLayers, skip_connections = [model_kwargs[k] for k in ['arch','activation','inDim','hDim','outDim','nLayers','skip_connections']]
-    # if architecture == 'GAT':
-    #     heads_1, heads_2, attDrop, inDrop = [model_kwargs[k] for k in ['heads_1','heads_2','attDrop','inDrop']]
-    #     model = GAT(inDim, hDim, outDim, heads_1, heads_2, attDrop, inDrop, nLayers, skip_connections, activation_fn)
-    # elif architecture =='GCN':
-    #     dropout = [model_kwargs[k] for k in ['dropout']]
-    #     model = GCN(inDim, hDim, outDim, nLayers, dropout, skip_connections, activation_fn)
-    # elif architecture =='GraphConv':
-    #     dropout = [model_kwargs[k] for k in ['dropout']]
-    #     model = GraphConv_(inDim, hDim, outDim, nLayers, dropout, skip_connections, activation_fn)
-    # elif architecture =='SAGE':
-    #     dropout = [model_kwargs[k] for k in ['dropout']]
-    #     model = SAGE(inDim, hDim, outDim, nLayers, dropout, skip_connections, activation_fn)
-    # return model
 
     def update_feature_weights(self, x):
         grad = x.grad.abs().mean(dim=0)

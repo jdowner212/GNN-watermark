@@ -116,7 +116,8 @@ def get_subgraph_tag(#subgraph_kwargs,
                      ):
     subgraph_kwargs = config.subgraph_kwargs
     subgraph_tag = ''
-    fraction = subgraph_kwargs['fraction']
+    # fraction = subgraph_kwargs['fraction']
+    sub_size_as_fraction = subgraph_kwargs['subgraph_size_as_fraction']
     numSubgraphs = subgraph_kwargs['numSubgraphs']
     method = subgraph_kwargs['method']
     if method == 'khop':
@@ -127,33 +128,39 @@ def get_subgraph_tag(#subgraph_kwargs,
         else:
             nodeIndices = khop_kwargs['nodeIndices']
             num_nodes = dataset_attributes[dataset_name]['num_nodes']
-            fraction = np.round(len(nodeIndices) / num_nodes, 5)
+            # fraction = np.round(len(nodeIndices) / num_nodes, 5)
+            sub_size_as_fraction = np.round((len(nodeIndices) / num_nodes)/numSubgraphs, 5)
         numHops = khop_kwargs['numHops']
         max_degree = khop_kwargs['max_degree']
-        subgraph_tag = f'{method}{numHops}_fraction{fraction}_numSubgraphs{numSubgraphs}_maxDegree{max_degree}'
+        # subgraph_tag = f'{method}{numHops}_fraction{fraction}_numSubgraphs{numSubgraphs}_maxDegree{max_degree}'
+        subgraph_tag = f'{method}{numHops}_sub_size_as_fraction{sub_size_as_fraction}_numSubgraphs{numSubgraphs}_maxDegree{max_degree}'
+
     elif method == 'random':
-        subgraph_tag = f'{method}_fraction{fraction}_numSubgraphs{numSubgraphs}'
+        # subgraph_tag = f'{method}_fraction{fraction}_numSubgraphs{numSubgraphs}'
+        subgraph_tag = f'{method}_sub_size_as_fraction{sub_size_as_fraction}_numSubgraphs{numSubgraphs}'
     elif method == 'random_walk_with_restart':
         rwr_kwargs = subgraph_kwargs['rwr_kwargs']
         restart_prob = rwr_kwargs['restart_prob']
         max_steps = rwr_kwargs['max_steps']
-        subgraph_tag = f'{method}_fraction{fraction}_numSubgraphs{numSubgraphs}_restart_prob{restart_prob}_maxSteps{max_steps}'
+        # subgraph_tag = f'{method}_fraction{fraction}_numSubgraphs{numSubgraphs}_restart_prob{restart_prob}_maxSteps{max_steps}'
+        subgraph_tag = f'{method}_sub_size_as_fraction{sub_size_as_fraction}_numSubgraphs{numSubgraphs}_restart_prob{restart_prob}_maxSteps{max_steps}'
     return subgraph_tag
 
 def get_watermark_loss_tag():#watermark_loss_kwargs):
     watermark_loss_kwargs = config.watermark_loss_kwargs
-    tag = f'eps{watermark_loss_kwargs['epsilon']}_'
-    if watermark_loss_kwargs['scale_beta_method'] is None:
-        tag+='raw_beta'
-    else:
-        if watermark_loss_kwargs['scale_beta_method']=='tanh':
-            tag+= f'tanh_{watermark_loss_kwargs["alpha"]}*beta'
-        elif watermark_loss_kwargs['scale_beta_method']=='tan':
-            tag+= f'tan_{watermark_loss_kwargs["alpha"]}*beta'
-        elif watermark_loss_kwargs['scale_beta_method']=='clip':
-            tag+= f'clipped_beta'
-    if watermark_loss_kwargs['balance_beta_weights']==True:
-        tag += '_balanced_beta_weights'
+    tag = f'eps{watermark_loss_kwargs['epsilon']}'
+    # tag = f'eps{watermark_loss_kwargs['epsilon']}_'
+    # if watermark_loss_kwargs['scale_beta_method'] is None:
+    #     tag+='raw_beta'
+    # else:
+    #     if watermark_loss_kwargs['scale_beta_method']=='tanh':
+    #         tag+= f'tanh_{watermark_loss_kwargs["alpha"]}*beta'
+    #     elif watermark_loss_kwargs['scale_beta_method']=='tan':
+    #         tag+= f'tan_{watermark_loss_kwargs["alpha"]}*beta'
+    #     elif watermark_loss_kwargs['scale_beta_method']=='clip':
+    #         tag+= f'clipped_beta'
+    # if watermark_loss_kwargs['balance_beta_weights']==True:
+        # tag += '_balanced_beta_weights'
     return tag
 
 def get_watermark_tag(#watermark_kwargs, 
@@ -166,7 +173,7 @@ def get_watermark_tag(#watermark_kwargs,
     if single_or_multi_graph == 'multi':
         wmk_tag = f'pGraphs{pGraphs}_' + wmk_tag
     percent_wmk = watermark_kwargs['percent_of_features_to_watermark']
-    wmk_tag += f'_{percent_wmk}%'
+    wmk_tag += f'_{percent_wmk:.2f}%'
 
     if watermark_kwargs['watermark_type']=='basic':
         wmk_tag +='BasicIndices'
@@ -189,7 +196,7 @@ def get_watermark_tag(#watermark_kwargs,
     
     return wmk_tag
 
-def get_results_folder_name(dataset_name):#, optimization_kwargs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs, regression_kwargs):
+def get_config_name(dataset_name):
     """
     Generate the folder name for storing results based on various configuration parameters.
 
@@ -220,8 +227,43 @@ def get_results_folder_name(dataset_name):#, optimization_kwargs, node_classifie
 
 
     # Combine All Tags into Config Name
-    model_folder_name = model_tag
     config_name = f'{wmk_tag}_{subgraph_tag}_{loss_tag}_{augment_tag}_{optimization_tag}_{regression_tag}'
+    return config_name
+
+def get_results_folder_name(dataset_name):#, optimization_kwargs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs, regression_kwargs):
+    """
+    Generate the folder name for storing results based on various configuration parameters.
+
+    Args:
+        dataset_name (str): The name of the dataset.
+        lr (float): Learning rate.
+        epochs (int): Number of training epochs.
+        node_classifier_kwargs (dict): Keyword arguments for the node classifier.
+        watermark_kwargs (dict): Keyword arguments for watermarking.
+        subgraph_kwargs (dict): Keyword arguments for subgraph generation.
+        augment_kwargs (dict): Keyword arguments for data augmentation.
+
+    Returns:
+        str: The generated folder name for storing results.
+    """
+    # global optimization_kwargs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs, regression_kwargs
+    # print('optimization_kwargs:',optimization_kwargs)
+    # Model Tag Construction
+    config_name = get_config_name(dataset_name)
+    model_tag = get_model_tag()#node_classifier_kwargs)
+    # wmk_tag = get_watermark_tag(#watermark_kwargs, 
+    #                             dataset_name)
+    # subgraph_tag = get_subgraph_tag(#subgraph_kwargs, 
+    #                                 dataset_name)
+    # loss_tag = get_watermark_loss_tag()#watermark_loss_kwargs)
+    # augment_tag = get_augment_tag()#augment_kwargs)
+    # optimization_tag = get_optimization_tag()#optimization_kwargs)
+    # regression_tag = get_regression_tag()#regression_kwargs)
+
+
+    # # Combine All Tags into Config Name
+    # config_name = f'{wmk_tag}_{subgraph_tag}_{loss_tag}_{augment_tag}_{optimization_tag}_{regression_tag}'
+    model_folder_name = model_tag
     dataset_folder_name = os.path.join(results_dir, dataset_name)
 
     if os.path.exists(os.path.join(dataset_folder_name, model_folder_name))==False:
