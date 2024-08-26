@@ -48,7 +48,7 @@ def rank_training_nodes_by_degree(dataset_name, graph_to_watermark, max_degree=N
     ranked_node_indices = list(these_degrees_sorted.keys())
     return ranked_node_indices
 
-def determine_whether_to_increment_numHops(dataset_name,frac,numSubgraphs,numHops):
+def determine_whether_to_increment_numHops(dataset_name,sub_size_as_fraction,numSubgraphs,numHops):
     file_name = os.path.join(data_dir,dataset_name,'subgraphs','must_increment_numHops.txt')
     if os.path.exists(file_name)==False:
         with open(file_name,'w') as f:
@@ -57,7 +57,7 @@ def determine_whether_to_increment_numHops(dataset_name,frac,numSubgraphs,numHop
         lines = f.readlines()
         for line in lines:
             line = ast.literal_eval(line)
-            if line[:3]==[frac,numSubgraphs,numHops]:
+            if line[:3]==[sub_size_as_fraction,numSubgraphs,numHops]:
                 f.close()
                 return line[3]
         return numHops
@@ -103,7 +103,8 @@ def create_khop_subgraph(data, dataset_name, central_node, numHops, max_num_node
                 file_content = f.read()
                 if file_content:
                     f.seek(0, 2)  # Move the cursor to the end of the file
-                f.write("%s\n" % [config.subgraph_kwargs['fraction'],config.subgraph_kwargs['numSubgraphs'],original_numHops,numHops])
+                # f.write("%s\n" % [config.subgraph_kwargs['fraction'],config.subgraph_kwargs['numSubgraphs'],original_numHops,numHops])
+                f.write("%s\n" % [config.subgraph_kwargs['subgraph_size_as_fraction'],config.subgraph_kwargs['numSubgraphs'],original_numHops,numHops])
             f.close()
 
 
@@ -176,9 +177,14 @@ def create_rwr_subgraph(data, start_node, restart_prob=0.15, subgraph_size=50, m
 def generate_subgraph(data, dataset_name, kwargs, central_node=None, avoid_nodes=[], use_train_mask=True, overrule_size_info=False, explicit_size_choice=10,show=True):
     data = copy.deepcopy(data)
     numSubgraphs    = kwargs['numSubgraphs']
-    fraction        = kwargs['fraction']
+    # fraction        = kwargs['fraction']
+    sub_size_as_fraction        = kwargs['subgraph_size_as_fraction']
     total_num_nodes = sum(data.train_mask)
-    subgraph_size   = int(fraction*total_num_nodes/numSubgraphs)
+    # subgraph_size   = int(fraction*total_num_nodes/numSubgraphs)
+    subgraph_size   = int(sub_size_as_fraction*total_num_nodes)
+    print('subgraph size as fraction:',sub_size_as_fraction)
+    print('total_num_nodes:',total_num_nodes)
+    print('numSubgraphs:',numSubgraphs)
 
     G = to_networkx(data, to_undirected=True)
 
@@ -217,7 +223,8 @@ def generate_subgraph(data, dataset_name, kwargs, central_node=None, avoid_nodes
         if kwargs['method']=='khop':
             title = f'{numHops}-hop subgraph centered at node {central_node} (degree={degrees[central_node]})'
         elif kwargs['method']=='random':
-            title = f'random {fraction}-fraction subgraph'
+            # title = f'random {fraction}-fraction subgraph'
+            title = f'random {sub_size_as_fraction}-fraction subgraph'
         elif kwargs['method']=='random_walk_with_restart':
             title = f'random walk w/ restart subgraph at node {central_node}, max steps={kwargs["rwr_kwargs"]["max_steps"]} and restart_prob={kwargs["rwr_kwargs"]["restart_prob"]}'
         G_sub = to_networkx(data_sub, to_undirected=True)

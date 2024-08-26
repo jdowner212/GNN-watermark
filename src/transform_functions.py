@@ -75,6 +75,10 @@ class CreateMaskTransform:
 
     def __call__(self, data):
         num_nodes = data.num_nodes
+        print('train ratio:',self.train_ratio)
+        print('test ratio:',self.test_ratio)
+        print('val ratio:',self.val_ratio)
+        print('num nodes:',num_nodes)
         
         # Generate random indices
         indices = torch.randperm(num_nodes)
@@ -179,3 +183,10 @@ class KHopsFractionDatasetTransform:
 
     def __repr__(self):
         return 'KHopsFractionDatasetTransform()'
+    
+
+class SparseToDenseTransform(BaseTransform):
+    def __call__(self, data: Data) -> Data:
+        if data.x.layout == torch.sparse_csr:
+            data.x = data.x.to_dense()  # Convert sparse CSR tensor to dense
+        return data

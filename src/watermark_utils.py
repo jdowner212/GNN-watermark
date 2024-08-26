@@ -41,7 +41,6 @@ def get_node_indices_to_watermark(dataset_name, graph_to_watermark, subgraph_kwa
     if subgraph_kwargs['khop_kwargs']['autoChooseSubGs']==True:
         num_watermarked_nodes = subgraph_kwargs['numSubgraphs']
         print('num_watermarked_nodes:',num_watermarked_nodes)
-        random.seed(2575)
         ranked_nodes = rank_training_nodes_by_degree(dataset_name, graph_to_watermark, max_degree=subgraph_kwargs['khop_kwargs']['max_degree'])
         node_indices_to_watermark = ranked_nodes[:num_watermarked_nodes]
     elif subgraph_kwargs['khop_kwargs']['autoChooseSubGs']==False:
@@ -71,9 +70,11 @@ def collect_subgraphs_within_single_graph_for_watermarking(data, dataset_name, u
     numSubgraphs = subgraph_kwargs['numSubgraphs']
     if subgraph_kwargs['regenerate']==False:
         subgraph_kwargs = config.subgraph_kwargs
-        frac = subgraph_kwargs['fraction']
+        # frac = subgraph_kwargs['fraction']
+        sub_size_as_fraction = subgraph_kwargs['subgraph_size_as_fraction']
         numHops = subgraph_kwargs['khop_kwargs']['numHops']
-        new_numHops = determine_whether_to_increment_numHops(dataset_name,frac,numSubgraphs,numHops)
+        # new_numHops = determine_whether_to_increment_numHops(dataset_name,frac,numSubgraphs,numHops)
+        new_numHops = determine_whether_to_increment_numHops(dataset_name,sub_size_as_fraction,numSubgraphs,numHops)
         # need to know which subgraph_dict to actually look up
         if subgraph_kwargs['method']=='khop' and new_numHops > numHops:
             config.subgraph_kwargs['khop_kwargs']['numHops']=new_numHops
@@ -112,9 +113,11 @@ def collect_subgraphs_within_single_graph_for_watermarking(data, dataset_name, u
             else:
                 central_node=None
 
-            print(f"Before generate_subgraph: numHops = {subgraph_kwargs['khop_kwargs']['numHops']}")
+            if subgraph_kwargs['method']=='khop':
+                print(f"Before generate_subgraph: numHops = {subgraph_kwargs['khop_kwargs']['numHops']}")
             data_sub, subgraph_signature, subgraph_node_indices = generate_subgraph(data, dataset_name, subgraph_kwargs, central_node, avoid_indices, use_train_mask, show=False)
-            print('subgraph_kwargs afterward:',subgraph_kwargs)
+            if subgraph_kwargs['method']=='khop':
+                print('subgraph_kwargs afterward:',subgraph_kwargs)
             subgraph_dict[subgraph_signature] = {'subgraph': data_sub, 'nodeIndices': subgraph_node_indices}
             seen_nodes += subgraph_node_indices.tolist()
 
@@ -314,15 +317,18 @@ def apply_watermark(watermark_type, num_features, len_watermark, subgraph_dict, 
     elif watermark_type=='most_represented':
         assert x is not None
         most_represented_indices = select_most_represented_feature_indices(x, len_watermark)
-        print('len_watermark:',len_watermark)
-        print('most_represented_indices:',most_represented_indices)
+        # print('len_watermark:',len_watermark)
+        # print('most_represented_indices:',most_represented_indices)
         watermarks = create_watermarks_at_most_represented_indices(len(subgraph_dict), len_watermark, num_features, most_represented_indices)
-        print('watermarks:',watermarks)
+        # print('watermarks:',watermarks)
         watermark_indices = torch.where(watermarks[0]!=0)[0]
-        print('watermark_indices:',watermark_indices)
+        # print('watermark_indices:',watermark_indices)
         each_subgraph_watermark_indices = [watermark_indices]*(len(subgraph_dict))
     for i, subgraph_sig in enumerate(subgraph_dict.keys()):
         subgraph_dict[subgraph_sig]['watermark']=watermarks[i]
+        # watermarked_x = subgraph_dict[subgraph_sig]['subgraph'].x[:,watermark_indices]
+        # summed_over_rows = torch.sum(watermarked_x,dim=0)
+        # print(f'# non-zero entries when summing over rows:', torch.sum(summed_over_rows!=0))
     return subgraph_dict, each_subgraph_watermark_indices, each_subgraph_feature_importances
 
 # subgraph_dict, each_subgraph_watermark_indices, each_subgraph_feature_importances = apply_watermark(watermark_type, num_features, len_watermark, subgraph_dict, x=None, probas=None, probas_dict=None, watermark_kwargs=None)
