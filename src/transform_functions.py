@@ -18,11 +18,13 @@ def add_indices(dataset):
     return dataset
 
 class DensifyTransform(BaseTransform):
-    def __init__(self, method):
+    def __init__(self, method, seed):
         self.method = method
+        self.seed = seed
         assert self.method is not None
 
     def __call__(self, data):
+        torch.manual_seed(seed)
 
         def densify(t, method='fourier'):
             if method=='fourier':
@@ -68,19 +70,21 @@ class ChooseLargestMaskForTrain(BaseTransform):
         return 'ChooseLargestMaskForTrain()'
 
 class CreateMaskTransform:
-    def __init__(self, train_ratio=0.6, val_ratio=0.2, test_ratio=0.2):
+    def __init__(self, train_ratio=0.6, val_ratio=0.2, test_ratio=0.2, seed=0):
         self.train_ratio = train_ratio
         self.val_ratio = val_ratio
         self.test_ratio = test_ratio
+        self.seed=seed
+        # print('train ratio:',self.train_ratio)
+        # print('test ratio:',self.test_ratio)
+        # print('val ratio:',self.val_ratio)
+        # print('num nodes:',num_nodes)
 
     def __call__(self, data):
         num_nodes = data.num_nodes
-        print('train ratio:',self.train_ratio)
-        print('test ratio:',self.test_ratio)
-        print('val ratio:',self.val_ratio)
-        print('num nodes:',num_nodes)
         
         # Generate random indices
+        torch.manual_seed(self.seed)
         indices = torch.randperm(num_nodes)
 
         train_size = int(self.train_ratio * num_nodes)
@@ -143,16 +147,18 @@ class GraphFourierTransform(BaseTransform):
 
 
 class KHopsFractionDatasetTransform:
-    def __init__(self, fraction, num_hops=2):
+    def __init__(self, fraction, num_hops=2, seed=0):
         assert 0 < fraction <= 1, "Fraction must be between 0 and 1."
         self.fraction = fraction
         self.num_hops = num_hops
+        self.seed = seed
 
     def __call__(self, data):
         num_nodes = data.num_nodes
         num_selected_nodes = int(num_nodes * self.fraction)
 
         # Start from a random node
+        np.random.seed(self.seed)
         start_node = np.random.randint(0, num_nodes)
         selected_nodes, sub_edge_index, _, _ = k_hop_subgraph(start_node, self.num_hops, edge_index=data.edge_index, num_nodes=data.num_nodes, relabel_nodes=True)
         

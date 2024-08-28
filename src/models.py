@@ -237,6 +237,7 @@ class SAGE(torch.nn.Module):
         return F.log_softmax(x, dim=1)
 
 
+
 class Net(torch.nn.Module):
     def __init__(self, **model_kwargs):
         super(Net, self).__init__()

@@ -1,4 +1,5 @@
 import numpy as np
+import time
 from   torch_geometric.datasets import PPI, Reddit, Reddit2, Planetoid, Coauthor, Flickr, Amazon, NELL, RelLinkPredDataset, Twitch
 
 import os
@@ -11,12 +12,13 @@ data_dir = f'{root_dir}/data'
 results_dir  = f'{root_dir}/training_results'
 compare_dicts_dir = f'{root_dir}/compare_dicts'
 
+
 dataset_attributes = { 
     'CORA': {
         'single_or_multi_graph': 'single',
         'class': Planetoid,
         'num_classes':7,
-        'num_nodes':2708
+        'num_nodes':2708,
     },
     'CiteSeer': {
         'single_or_multi_graph': 'single',
@@ -29,12 +31,14 @@ dataset_attributes = {
         'class': Planetoid,
         'num_classes':3,
         'num_nodes':19717,
+        'num_features':500
     },
     'CS': {
         'single_or_multi_graph': 'single',
         'class': Coauthor,
-        'num_classes':3,
-        'num_nodes':19717,
+        'num_classes':15,
+        'num_nodes':18333,
+        'num_features':6805
     },
     'Reddit': {
         'single_or_multi_graph': 'single',
@@ -58,13 +62,15 @@ dataset_attributes = {
         'single_or_multi_graph': 'single',
         'class': Amazon,
         'num_classes':10,
-        'num_nodes':13752
+        'num_nodes':13752,
+        'num_features':767
     },
     'photo': {
         'single_or_multi_graph': 'single',
         'class': Amazon,
         'num_classes':8,
-        'num_nodes':7650
+        'num_nodes':7650,
+        'num_features':745
     },
     'PPI': {
         'single_or_multi_graph': 'multi',
@@ -96,9 +102,11 @@ dataset_attributes = {
 
 
 
-
 def get_presets(dataset, dataset_name):
-    global node_classifier_kwargs, optimization_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs, regression_kwargs
+    global seed, random_seed, node_classifier_kwargs, optimization_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs, regression_kwargs
+
+    seed = 0
+    random_seed = int(time.time())
 
     node_classifier_kwargs  =  {'arch': 'SAGE',  
                                 'activation': 'elu',        
@@ -114,7 +122,7 @@ def get_presets(dataset, dataset_name):
     
     optimization_kwargs     =  {'lr': 0.01,
                                 'epochs': 200,
-                                'freeze_params_before_wmk':False,
+                                # 'freeze_params_before_wmk':False,
                                 'penalize_similar_subgraphs':False,
                                 'p_swap':0,
                                 'shifted_subgraph_loss_coef':0,
@@ -171,12 +179,13 @@ def get_presets(dataset, dataset_name):
 
     elif dataset_name=='Flickr' or dataset_name=='NELL':
         pass # default settings are fine
-    
+
     elif dataset_name=='computers':
+        node_classifier_kwargs  =  {'arch': 'GCN', 'activation': 'elu', 'nLayers': 3, 'hDim': 256, 'dropout': 0.1, 'dropout_subgraphs': 0, 'skip_connections': True, 'heads_1': 8, 'heads_2': 1, 'inDim': dataset.num_features, 'outDim': dataset.num_classes}
         watermark_kwargs        =  {'pGraphs': 1, 'percent_of_features_to_watermark': 3, 'watermark_type': 'most_represented', 'unimportant_selection_kwargs': {'clf_only_epochs': 20, 'evaluate_individually': False, 'multi_subg_strategy': 'average'}}
         watermark_loss_kwargs   =  {'epsilon': 0.1}
-        optimization_kwargs     =  {'lr': 0.001, 'epochs': 90, 'freeze_params_before_wmk': False, 'penalize_similar_subgraphs': False, 'p_swap': 0.5, 'shifted_subgraph_loss_coef': 0.1, 'sacrifice_kwargs': {'method': 'subgraph_node_indices', 'percentage': 1}, 'clf_only': False, 'coefWmk_kwargs': {'coefWmk': 20, 'schedule_coef_wmk': False, 'min_coefWmk_scheduled': 100, 'reach_max_coef_wmk_by_epoch': 70}, 'regularization_type': None, 'lambda_l2': 0.01, 'use_pcgrad': True, 'use_sam': False, 'sam_momentum': 0.5, 'sam_rho': 1e-05, 'separate_forward_passes_per_subgraph': True}
-        node_classifier_kwargs  =  {'arch': 'GCN', 'activation': 'elu', 'nLayers': 3, 'hDim': 256, 'dropout': 0.1, 'dropout_subgraphs': 0, 'skip_connections': True, 'heads_1': 8, 'heads_2': 1, 'inDim': 767, 'outDim': 10}
+        optimization_kwargs     =  {'lr': 0.001, 'epochs': 90, #'freeze_params_before_wmk': False, 
+                                    'penalize_similar_subgraphs': False, 'p_swap': 0.5, 'shifted_subgraph_loss_coef': 0.1, 'sacrifice_kwargs': {'method': 'subgraph_node_indices', 'percentage': 1}, 'clf_only': False, 'coefWmk_kwargs': {'coefWmk': 20, 'schedule_coef_wmk': False, 'min_coefWmk_scheduled': 100, 'reach_max_coef_wmk_by_epoch': 70}, 'regularization_type': None, 'lambda_l2': 0.01, 'use_pcgrad': True, 'use_sam': False, 'sam_momentum': 0.5, 'sam_rho': 1e-05, 'separate_forward_passes_per_subgraph': True}
         subgraph_kwargs         =  {'regenerate': True, 'method': 'random', 'subgraph_size_as_fraction': 0.005, 'numSubgraphs': 7, 'khop_kwargs': {'autoChooseSubGs': True, 'nodeIndices': None, 'numHops': 1, 'max_degree': 40}, 'random_kwargs': {}, 'rwr_kwargs': {'restart_prob': 0.15, 'max_steps': 1000}}
         augment_kwargs          =  {'separate_trainset_from_subgraphs': True, 'p': 0.3, 'ignore_subgraphs': True, 'nodeDrop': {'use': True, 'p': 0.1}, 'nodeMixUp': {'use': True, 'lambda': 5}, 'nodeFeatMask': {'use': False, 'p': 0.2}, 'edgeDrop': {'use': True, 'p': 0.1}}
         augment_kwargs['nodeDrop']['p']=0.35
@@ -188,36 +197,40 @@ def get_presets(dataset, dataset_name):
 
 
     elif dataset_name=='CS':
+        node_classifier_kwargs  =  {'arch': 'SAGE', 'activation': 'elu', 'nLayers': 3, 'hDim': 256, 'dropout': 0.1, 'dropout_subgraphs': 0, 'skip_connections': True, 'heads_1': 8, 'heads_2': 1, 'inDim': dataset.num_features, 'outDim': dataset.num_classes}
         watermark_kwargs        =  {'pGraphs': 1, 'percent_of_features_to_watermark': 3, 'watermark_type': 'most_represented', 'unimportant_selection_kwargs': {'clf_only_epochs': 20, 'evaluate_individually': False, 'multi_subg_strategy': 'average'}}
         watermark_loss_kwargs   =  {'epsilon': 0.1}
-        optimization_kwargs     =  {'lr': 0.001, 'epochs': 90, 'freeze_params_before_wmk': False, 'penalize_similar_subgraphs': False, 'p_swap': 0.5, 'shifted_subgraph_loss_coef': 0.1, 'sacrifice_kwargs': {'method': 'subgraph_node_indices', 'percentage': 1}, 'clf_only': False, 'coefWmk_kwargs': {'coefWmk': 20, 'schedule_coef_wmk': False, 'min_coefWmk_scheduled': 100, 'reach_max_coef_wmk_by_epoch': 70}, 'regularization_type': None, 'lambda_l2': 0.01, 'use_pcgrad': True, 'use_sam': False, 'sam_momentum': 0.5, 'sam_rho': 1e-05, 'separate_forward_passes_per_subgraph': True}
-        node_classifier_kwargs  =  {'arch': 'SAGE', 'activation': 'elu', 'nLayers': 3, 'hDim': 256, 'dropout': 0.1, 'dropout_subgraphs': 0, 'skip_connections': True, 'heads_1': 8, 'heads_2': 1, 'inDim': 6805, 'outDim': 15}
+        optimization_kwargs     =  {'lr': 0.001, 'epochs': 90, #'freeze_params_before_wmk': False, 
+                                    'penalize_similar_subgraphs': False, 'p_swap': 0.5, 'shifted_subgraph_loss_coef': 0.1, 'sacrifice_kwargs': {'method': 'subgraph_node_indices', 'percentage': 1}, 'clf_only': False, 'coefWmk_kwargs': {'coefWmk': 20, 'schedule_coef_wmk': False, 'min_coefWmk_scheduled': 100, 'reach_max_coef_wmk_by_epoch': 70}, 'regularization_type': None, 'lambda_l2': 0.01, 'use_pcgrad': True, 'use_sam': False, 'sam_momentum': 0.5, 'sam_rho': 1e-05, 'separate_forward_passes_per_subgraph': True}
         subgraph_kwargs         =  {'regenerate': True, 'method': 'random', 'subgraph_size_as_fraction': 0.005, 'numSubgraphs': 7, 'khop_kwargs': {'autoChooseSubGs': True, 'nodeIndices': None, 'numHops': 1, 'max_degree': 50}, 'random_kwargs': {}, 'rwr_kwargs': {'restart_prob': 0.15, 'max_steps': 1000}}
         augment_kwargs          =  {'separate_trainset_from_subgraphs': True, 'p': 0.3, 'ignore_subgraphs': True, 'nodeDrop': {'use': True, 'p': 0.1}, 'nodeMixUp': {'use': True, 'lambda': 5}, 'nodeFeatMask': {'use': False, 'p': 0.2}, 'edgeDrop': {'use': True, 'p': 0.1}}
 
     elif dataset_name=='photo':
 
+        node_classifier_kwargs =  {'arch': 'GCN', 'activation': 'elu', 'nLayers': 3, 'hDim': 256, 'dropout': 0.1, 'dropout_subgraphs': 0, 'skip_connections': True, 'heads_1': 8, 'heads_2': 1, 'inDim': dataset.num_features, 'outDim': dataset.num_classes}
         watermark_kwargs       =  {'pGraphs': 1, 'percent_of_features_to_watermark': 3, 'watermark_type': 'most_represented', 'unimportant_selection_kwargs': {'clf_only_epochs': 20, 'evaluate_individually': False, 'multi_subg_strategy': 'average'}}
         watermark_loss_kwargs  =  {'epsilon': 0.1}
-        optimization_kwargs    =  {'lr': 0.001, 'epochs': 90, 'freeze_params_before_wmk': False, 'penalize_similar_subgraphs': False, 'p_swap': 0.5, 'shifted_subgraph_loss_coef': 0.1, 'sacrifice_kwargs': {'method': 'subgraph_node_indices', 'percentage': 1}, 'clf_only': False, 'coefWmk_kwargs': {'coefWmk': 20, 'schedule_coef_wmk': False, 'min_coefWmk_scheduled': 100, 'reach_max_coef_wmk_by_epoch': 70}, 'regularization_type': None, 'lambda_l2': 0.01, 'use_pcgrad': True, 'use_sam': False, 'sam_momentum': 0.5, 'sam_rho': 1e-05,'separate_forward_passes_per_subgraph': True}
-        node_classifier_kwargs =  {'arch': 'GCN', 'activation': 'elu', 'nLayers': 3, 'hDim': 256, 'dropout': 0.1, 'dropout_subgraphs': 0, 'skip_connections': True, 'heads_1': 8, 'heads_2': 1, 'inDim': 745, 'outDim': 8}
+        optimization_kwargs    =  {'lr': 0.001, 'epochs': 90, #'freeze_params_before_wmk': False, 
+                                   'penalize_similar_subgraphs': False, 'p_swap': 0.5, 'shifted_subgraph_loss_coef': 0.1, 'sacrifice_kwargs': {'method': 'subgraph_node_indices', 'percentage': 1}, 'clf_only': False, 'coefWmk_kwargs': {'coefWmk': 20, 'schedule_coef_wmk': False, 'min_coefWmk_scheduled': 100, 'reach_max_coef_wmk_by_epoch': 70}, 'regularization_type': None, 'lambda_l2': 0.01, 'use_pcgrad': True, 'use_sam': False, 'sam_momentum': 0.5, 'sam_rho': 1e-05,'separate_forward_passes_per_subgraph': True}
         subgraph_kwargs        =  {'regenerate': True, 'method': 'random', 'subgraph_size_as_fraction': 0.005, 'numSubgraphs': 7, 'khop_kwargs': {'autoChooseSubGs': True, 'nodeIndices': None, 'numHops': 1, 'max_degree': 50}, 'random_kwargs': {}, 'rwr_kwargs': {'restart_prob': 0.15, 'max_steps': 1000}}
         augment_kwargs         =  {'nodeDrop': {'use': True, 'p': 0.3}, 'nodeMixUp': {'use': True, 'lambda': 1}, 'nodeFeatMask': {'use': True, 'p': 0.3}, 'edgeDrop': {'use': True, 'p': 0.3}, 'p': 0.3, 'separate_trainset_from_subgraphs': True, 'ignore_subgraphs': True}
 
     elif dataset_name=='PubMed':
+        node_classifier_kwargs =  {'arch': 'SAGE', 'activation': 'elu', 'nLayers': 3, 'hDim': 256, 'dropout': 0.1, 'dropout_subgraphs': 0, 'skip_connections': True, 'heads_1': 8, 'heads_2': 1, 'inDim': dataset.num_features, 'outDim': dataset.num_classes}
         watermark_kwargs       =  {'pGraphs': 1, 'percent_of_features_to_watermark': 3, 'watermark_type': 'most_represented', 'unimportant_selection_kwargs': {'clf_only_epochs': 10, 'evaluate_individually': False, 'multi_subg_strategy': 'average'}}
         watermark_loss_kwargs  =  {'epsilon': 0.1}
-        optimization_kwargs    =  {'lr': 0.001, 'epochs': 200, 'freeze_params_before_wmk': False, 'penalize_similar_subgraphs': False, 'p_swap': 0.5, 'shifted_subgraph_loss_coef': 0.1, 'sacrifice_kwargs': {'method': 'subgraph_node_indices', 'percentage': 1}, 'clf_only': False, 'coefWmk_kwargs': {'coefWmk': 70, 'schedule_coef_wmk': False, 'min_coefWmk_scheduled': 100, 'reach_max_coef_wmk_by_epoch': 70}, 'regularization_type': None, 'lambda_l2': 0.01, 'use_pcgrad': True, 'use_sam': False, 'sam_momentum': 0.5, 'sam_rho': 1e-05, 'separate_forward_passes_per_subgraph': True}
-        node_classifier_kwargs =  {'arch': 'SAGE', 'activation': 'elu', 'nLayers': 3, 'hDim': 256, 'dropout': 0.1, 'dropout_subgraphs': 0, 'skip_connections': True, 'heads_1': 8, 'heads_2': 1, 'inDim': 500, 'outDim': 3}
+        optimization_kwargs    =  {'lr': 0.001, 'epochs': 200, #'freeze_params_before_wmk': False, 
+                                   'penalize_similar_subgraphs': False, 'p_swap': 0.5, 'shifted_subgraph_loss_coef': 0.1, 'sacrifice_kwargs': {'method': 'subgraph_node_indices', 'percentage': 1}, 'clf_only': False, 'coefWmk_kwargs': {'coefWmk': 70, 'schedule_coef_wmk': False, 'min_coefWmk_scheduled': 100, 'reach_max_coef_wmk_by_epoch': 70}, 'regularization_type': None, 'lambda_l2': 0.01, 'use_pcgrad': True, 'use_sam': False, 'sam_momentum': 0.5, 'sam_rho': 1e-05, 'separate_forward_passes_per_subgraph': True}
         subgraph_kwargs        =  {'regenerate': True, 'method': 'random', 'subgraph_size_as_fraction': 0.005, 'numSubgraphs': 7, 'khop_kwargs': {'autoChooseSubGs': True, 'nodeIndices': None, 'numHops': 1, 'max_degree': 50}, 'random_kwargs': {}, 'rwr_kwargs': {'restart_prob': 0.15, 'max_steps': 1000}}
         augment_kwargs         =  {'separate_trainset_from_subgraphs': True, 'p': 0, 'ignore_subgraphs': True, 'nodeDrop': {'use': True, 'p': 0.1}, 'nodeMixUp': {'use': True, 'lambda': 5}, 'nodeFeatMask': {'use': False, 'p': 0.2}, 'edgeDrop': {'use': True, 'p': 0.1}}
 
 
     elif dataset_name=='Twitch_EN':
+        node_classifier_kwargs =  {'arch': 'SAGE', 'activation': 'elu', 'nLayers': 3, 'hDim': 256, 'dropout': 0, 'dropout_subgraphs': 0, 'skip_connections': True, 'heads_1': 8, 'heads_2': 1, 'inDim': dataset.num_features, 'outDim': dataset.num_classes}
         watermark_kwargs = {'pGraphs': 1, 'percent_of_features_to_watermark': 100, 'watermark_type': 'most_represented', 'unimportant_selection_kwargs': {'clf_only_epochs': 100, 'evaluate_individually': False, 'multi_subg_strategy': 'average'}}
         watermark_loss_kwargs = {'epsilon': 0.001}
-        optimization_kwargs =  {'lr': 0.01, 'epochs': 200, 'freeze_params_before_wmk': False, 'penalize_similar_subgraphs': False, 'p_swap': 0, 'shifted_subgraph_loss_coef': 0, 'sacrifice_kwargs': {'method': None, 'percentage': None}, 'clf_only': False, 'coefWmk_kwargs': {'coefWmk': 1, 'schedule_coef_wmk': False, 'min_coefWmk_scheduled': 0, 'reach_max_coef_wmk_by_epoch': 100}, 'regularization_type': None, 'lambda_l2': 0.01, 'use_pcgrad': False, 'use_sam': False, 'sam_momentum': 0.5, 'sam_rho': 0.005, 'separate_forward_passes_per_subgraph': True}
-        node_classifier_kwargs =  {'arch': 'SAGE', 'activation': 'elu', 'nLayers': 3, 'hDim': 256, 'dropout': 0, 'dropout_subgraphs': 0, 'skip_connections': True, 'heads_1': 8, 'heads_2': 1, 'inDim': 128, 'outDim': 2}
+        optimization_kwargs =  {'lr': 0.01, 'epochs': 200, #'freeze_params_before_wmk': False, 
+                                'penalize_similar_subgraphs': False, 'p_swap': 0, 'shifted_subgraph_loss_coef': 0, 'sacrifice_kwargs': {'method': None, 'percentage': None}, 'clf_only': False, 'coefWmk_kwargs': {'coefWmk': 1, 'schedule_coef_wmk': False, 'min_coefWmk_scheduled': 0, 'reach_max_coef_wmk_by_epoch': 100}, 'regularization_type': None, 'lambda_l2': 0.01, 'use_pcgrad': False, 'use_sam': False, 'sam_momentum': 0.5, 'sam_rho': 0.005, 'separate_forward_passes_per_subgraph': True}
         subgraph_kwargs = {'regenerate': False, 'method': 'random', 'subgraph_size_as_fraction': 0.001, 'numSubgraphs': 1, 'khop_kwargs': {'autoChooseSubGs': True, 'nodeIndices': None, 'numHops': 1, 'max_degree': 50}, 'random_kwargs': {}, 'rwr_kwargs': {'restart_prob': 0.15, 'max_steps': 1000}}
         augment_kwargs = {'separate_trainset_from_subgraphs': True, 'p': 1, 'ignore_subgraphs': True, 'nodeDrop': {'use': True, 'p': 0.45}, 'nodeMixUp': {'use': True, 'lambda': 0}, 'nodeFeatMask': {'use': True, 'p': 0.2}, 'edgeDrop': {'use': True, 'p': 0.9}}
 
@@ -229,10 +242,11 @@ def validate_regression_kwargs():
 
 
 def validate_optimization_kwargs():
-    assert set(list(optimization_kwargs.keys()))=={'lr','epochs','freeze_params_before_wmk','penalize_similar_subgraphs','p_swap','shifted_subgraph_loss_coef','sacrifice_kwargs','coefWmk_kwargs','clf_only','regularization_type','lambda_l2','use_pcgrad','use_sam','sam_momentum','sam_rho','separate_forward_passes_per_subgraph'}
+    assert set(list(optimization_kwargs.keys()))=={'lr','epochs',#'freeze_params_before_wmk',
+                                                   'penalize_similar_subgraphs','p_swap','shifted_subgraph_loss_coef','sacrifice_kwargs','coefWmk_kwargs','clf_only','regularization_type','lambda_l2','use_pcgrad','use_sam','sam_momentum','sam_rho','separate_forward_passes_per_subgraph'}
     assert isinstance(optimization_kwargs['lr'],(int, float, np.integer, np.floating)) and optimization_kwargs['lr']>=0
     assert isinstance(optimization_kwargs['epochs'],int) and optimization_kwargs['epochs']>=0
-    assert isinstance(optimization_kwargs['freeze_params_before_wmk'],bool)
+    # assert isinstance(optimization_kwargs['freeze_params_before_wmk'],bool)
     assert isinstance(optimization_kwargs['penalize_similar_subgraphs'],bool)
     assert isinstance(optimization_kwargs['p_swap'],(int, float, np.integer, np.floating)) and optimization_kwargs['p_swap']>=0 and optimization_kwargs['p_swap']<=1
     assert isinstance(optimization_kwargs['shifted_subgraph_loss_coef'],(int, float, np.integer, np.floating)) and optimization_kwargs['shifted_subgraph_loss_coef']>=0
@@ -330,6 +344,7 @@ def validate_watermark_loss_kwargs():
     assert watermark_loss_kwargs['epsilon']>=0
 
 def validate_kwargs():
+    assert isinstance(seed,int)
     validate_regression_kwargs()
     validate_optimization_kwargs()
     validate_node_classifier_kwargs()

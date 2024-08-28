@@ -1,18 +1,10 @@
-import copy
-import matplotlib.pyplot as plt
 import numpy as np
-import networkx as nx
 import os
 import numpy as np 
 import pickle
-import random
-from   sklearn.model_selection import train_test_split
 import textwrap
 from   tqdm.notebook import tqdm
 import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
 
 
 from torch_geometric.data import Data  
@@ -35,8 +27,6 @@ def count_matches(features):
 
 def describe_selection_config(num_features,watermark_kwargs, subgraph_dict):
     watermark_type = watermark_kwargs['watermark_type']
-    # use_unimpt  = watermark_kwargs['fancy_selection_kwargs']['selection_strategy']=='unimportant'
-    # use_rand    = watermark_kwargs['fancy_selection_kwargs']['selection_strategy']=='random'
     use_concat  = watermark_kwargs['unimportant_selection_kwargs']['multi_subg_strategy']=='concat'
     use_avg     = watermark_kwargs['unimportant_selection_kwargs']['multi_subg_strategy']=='average'
     use_indiv   = watermark_kwargs['unimportant_selection_kwargs']['evaluate_individually']
@@ -70,7 +60,10 @@ def get_augment_tag():#augment_kwargs):
     augment_tag = '_'.join(augment_tags)
     return augment_tag
 
-def get_model_tag():#node_classifier_kwargs):
+
+
+
+def get_model_tag():
     node_classifier_kwargs = config.node_classifier_kwargs
     arch = node_classifier_kwargs['arch']
     act = node_classifier_kwargs['activation']
@@ -85,38 +78,43 @@ def get_model_tag():#node_classifier_kwargs):
         model_tag += f'_heads_{heads_1}_{heads_2}'
     return model_tag
 
-def get_optimization_tag():#optimization_kwargs):
+def get_optimization_tag():
     optimization_kwargs = config.optimization_kwargs
+    clf_only = optimization_kwargs['clf_only']
     [lr, epochs] = [optimization_kwargs[k] for k in ['lr','epochs']]
     coef_wmk = optimization_kwargs['coefWmk_kwargs']['coefWmk']
-    tag = f'lr{lr}_epochs{epochs}_coefWmk{coef_wmk}'
-    if optimization_kwargs['sacrifice_kwargs']['method'] == 'subgraph_node_indices':
-        tag += f'_sacrifice{optimization_kwargs['sacrifice_kwargs']["percentage"]}subNodes'
-    elif optimization_kwargs['sacrifice_kwargs']['method'] == 'train_node_indices':
-        tag += f'_sacrifice{optimization_kwargs['sacrifice_kwargs']["percentage"]}trainNodes'
+    tag = f'lr{lr}_epochs{epochs}'
+    
+    if clf_only==False:
+        tag += f'_coefWmk{coef_wmk}'
+        if optimization_kwargs['sacrifice_kwargs']['method'] == 'subgraph_node_indices':
+            tag += f'_sacrifice{optimization_kwargs['sacrifice_kwargs']["percentage"]}subNodes'
+        elif optimization_kwargs['sacrifice_kwargs']['method'] == 'train_node_indices':
+            tag += f'_sacrifice{optimization_kwargs['sacrifice_kwargs']["percentage"]}trainNodes'
     if optimization_kwargs['regularization_type'] is not None:
         tag += f'_{optimization_kwargs["regularization_type"]}'
         if optimization_kwargs['regularization_type']=='L2':
             tag += f'_lambdaL2{optimization_kwargs["lambda_l2"]}'
-    if optimization_kwargs['penalize_similar_subgraphs']==True:
-        p_swap = optimization_kwargs['p_swap']
-        coef = optimization_kwargs['shifted_subgraph_loss_coef']
-        tag += f'_penalizeSimilar{p_swap}X{coef}'                      
-
+    if clf_only==False:
+        if optimization_kwargs['penalize_similar_subgraphs']==True:
+            p_swap = optimization_kwargs['p_swap']
+            coef = optimization_kwargs['shifted_subgraph_loss_coef']
+            tag += f'_penalizeSimilar{p_swap}X{coef}'  
+        if optimization_kwargs['use_pcgrad']==True:
+            tag+='_pcgrad'                    
+    if optimization_kwargs['use_sam']==True:
+        tag += f'_sam_mom{optimization_kwargs['sam_momentum']}_rho{optimization_kwargs['sam_rho']}'
     return tag
 
-def get_regression_tag():##regression_kwargs):
+def get_regression_tag():
     regression_kwargs = config.regression_kwargs
     lambda_ = regression_kwargs['lambda']
     regression_tag = f'regressionLambda{lambda_}'
     return regression_tag
 
-def get_subgraph_tag(#subgraph_kwargs, 
-                     dataset_name
-                     ):
+def get_subgraph_tag(dataset_name):
     subgraph_kwargs = config.subgraph_kwargs
     subgraph_tag = ''
-    # fraction = subgraph_kwargs['fraction']
     sub_size_as_fraction = subgraph_kwargs['subgraph_size_as_fraction']
     numSubgraphs = subgraph_kwargs['numSubgraphs']
     method = subgraph_kwargs['method']
@@ -128,39 +126,23 @@ def get_subgraph_tag(#subgraph_kwargs,
         else:
             nodeIndices = khop_kwargs['nodeIndices']
             num_nodes = dataset_attributes[dataset_name]['num_nodes']
-            # fraction = np.round(len(nodeIndices) / num_nodes, 5)
             sub_size_as_fraction = np.round((len(nodeIndices) / num_nodes)/numSubgraphs, 5)
         numHops = khop_kwargs['numHops']
         max_degree = khop_kwargs['max_degree']
-        # subgraph_tag = f'{method}{numHops}_fraction{fraction}_numSubgraphs{numSubgraphs}_maxDegree{max_degree}'
         subgraph_tag = f'{method}{numHops}_sub_size_as_fraction{sub_size_as_fraction}_numSubgraphs{numSubgraphs}_maxDegree{max_degree}'
 
     elif method == 'random':
-        # subgraph_tag = f'{method}_fraction{fraction}_numSubgraphs{numSubgraphs}'
         subgraph_tag = f'{method}_sub_size_as_fraction{sub_size_as_fraction}_numSubgraphs{numSubgraphs}'
     elif method == 'random_walk_with_restart':
         rwr_kwargs = subgraph_kwargs['rwr_kwargs']
         restart_prob = rwr_kwargs['restart_prob']
         max_steps = rwr_kwargs['max_steps']
-        # subgraph_tag = f'{method}_fraction{fraction}_numSubgraphs{numSubgraphs}_restart_prob{restart_prob}_maxSteps{max_steps}'
         subgraph_tag = f'{method}_sub_size_as_fraction{sub_size_as_fraction}_numSubgraphs{numSubgraphs}_restart_prob{restart_prob}_maxSteps{max_steps}'
     return subgraph_tag
 
 def get_watermark_loss_tag():#watermark_loss_kwargs):
     watermark_loss_kwargs = config.watermark_loss_kwargs
     tag = f'eps{watermark_loss_kwargs['epsilon']}'
-    # tag = f'eps{watermark_loss_kwargs['epsilon']}_'
-    # if watermark_loss_kwargs['scale_beta_method'] is None:
-    #     tag+='raw_beta'
-    # else:
-    #     if watermark_loss_kwargs['scale_beta_method']=='tanh':
-    #         tag+= f'tanh_{watermark_loss_kwargs["alpha"]}*beta'
-    #     elif watermark_loss_kwargs['scale_beta_method']=='tan':
-    #         tag+= f'tan_{watermark_loss_kwargs["alpha"]}*beta'
-    #     elif watermark_loss_kwargs['scale_beta_method']=='clip':
-    #         tag+= f'clipped_beta'
-    # if watermark_loss_kwargs['balance_beta_weights']==True:
-        # tag += '_balanced_beta_weights'
     return tag
 
 def get_watermark_tag(#watermark_kwargs, 
@@ -173,7 +155,12 @@ def get_watermark_tag(#watermark_kwargs,
     if single_or_multi_graph == 'multi':
         wmk_tag = f'pGraphs{pGraphs}_' + wmk_tag
     percent_wmk = watermark_kwargs['percent_of_features_to_watermark']
-    wmk_tag += f'_{percent_wmk:.2f}%'
+    
+    if len(wmk_tag)>0:
+        wmk_tag += f'_{np.round(percent_wmk,2)}pct'
+    else:
+        wmk_tag += f'{np.round(percent_wmk,2)}pct'
+
 
     if watermark_kwargs['watermark_type']=='basic':
         wmk_tag +='BasicIndices'
@@ -196,6 +183,11 @@ def get_watermark_tag(#watermark_kwargs,
     
     return wmk_tag
 
+def get_seed_tag():
+    seed_tag = 'seed'+str(config.seed)
+    return seed_tag
+
+
 def get_config_name(dataset_name):
     """
     Generate the folder name for storing results based on various configuration parameters.
@@ -215,22 +207,29 @@ def get_config_name(dataset_name):
     # global optimization_kwargs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs, regression_kwargs
     # print('optimization_kwargs:',optimization_kwargs)
     # Model Tag Construction
-    model_tag = get_model_tag()#node_classifier_kwargs)
+    # model_tag = get_model_tag()#node_classifier_kwargs)
+    seed_tag = get_seed_tag()
     wmk_tag = get_watermark_tag(#watermark_kwargs, 
                                 dataset_name)
     subgraph_tag = get_subgraph_tag(#subgraph_kwargs, 
                                     dataset_name)
-    loss_tag = get_watermark_loss_tag()#watermark_loss_kwargs)
+    watermark_loss_tag = get_watermark_loss_tag()#watermark_loss_kwargs)
     augment_tag = get_augment_tag()#augment_kwargs)
     optimization_tag = get_optimization_tag()#optimization_kwargs)
     regression_tag = get_regression_tag()#regression_kwargs)
 
 
     # Combine All Tags into Config Name
-    config_name = f'{wmk_tag}_{subgraph_tag}_{loss_tag}_{augment_tag}_{optimization_tag}_{regression_tag}'
+    optimization_kwargs = config.optimization_kwargs
+    clf_only = optimization_kwargs['clf_only']
+    if clf_only==False:
+        config_name = f'{wmk_tag}_{subgraph_tag}_{watermark_loss_tag}_{augment_tag}_{optimization_tag}_{regression_tag}_{seed_tag}'
+    elif clf_only==True:
+        config_name = f'clf_only_{augment_tag}_{optimization_tag}_{seed_tag}'
     return config_name
 
 def get_results_folder_name(dataset_name):#, optimization_kwargs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs, regression_kwargs):
+    print('get_results_folder: seed =',config.seed)
     """
     Generate the folder name for storing results based on various configuration parameters.
 
@@ -246,23 +245,8 @@ def get_results_folder_name(dataset_name):#, optimization_kwargs, node_classifie
     Returns:
         str: The generated folder name for storing results.
     """
-    # global optimization_kwargs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs, regression_kwargs
-    # print('optimization_kwargs:',optimization_kwargs)
-    # Model Tag Construction
     config_name = get_config_name(dataset_name)
-    model_tag = get_model_tag()#node_classifier_kwargs)
-    # wmk_tag = get_watermark_tag(#watermark_kwargs, 
-    #                             dataset_name)
-    # subgraph_tag = get_subgraph_tag(#subgraph_kwargs, 
-    #                                 dataset_name)
-    # loss_tag = get_watermark_loss_tag()#watermark_loss_kwargs)
-    # augment_tag = get_augment_tag()#augment_kwargs)
-    # optimization_tag = get_optimization_tag()#optimization_kwargs)
-    # regression_tag = get_regression_tag()#regression_kwargs)
-
-
-    # # Combine All Tags into Config Name
-    # config_name = f'{wmk_tag}_{subgraph_tag}_{loss_tag}_{augment_tag}_{optimization_tag}_{regression_tag}'
+    model_tag = get_model_tag()
     model_folder_name = model_tag
     dataset_folder_name = os.path.join(results_dir, dataset_name)
 
@@ -276,18 +260,22 @@ def item_not_in_any_list(item, list_of_lists):
         if item in sublist:
             return False
     return True
-    
-def name_compare_dict(dataset_name, optimization_kwargs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs):
-    folder_name = get_results_folder_name(dataset_name, optimization_kwargs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs)
-    compare_dict_name = f"compare_dicts_{folder_name}"
-    return compare_dict_name
+
 
 def save_results(dataset_name, node_classifier, history, subgraph_dict=None, all_feature_importances=None, all_watermark_indices=None, probas=None):
     results_folder_name = get_results_folder_name(dataset_name)
     if os.path.exists(results_folder_name)==False:
         os.mkdir(results_folder_name)
-    for object_name, object in zip(['node_classifier','history','subgraph_dict','all_feature_importances','all_watermark_indices','probas'],
-                                   [ node_classifier,  history,  subgraph_dict,  all_feature_importances,  all_watermark_indices,  probas]):
+    config_dict = {'node_classifier_kwargs':config.node_classifier_kwargs,
+                'optimization_kwargs':config.optimization_kwargs,
+                'watermark_kwargs':config.watermark_kwargs,
+                'subgraph_kwargs':config.subgraph_kwargs,
+                'regression_kwargs':config.regression_kwargs,
+                'watermark_loss_kwargs':config.watermark_loss_kwargs,
+                'augment_kwargs':config.augment_kwargs,
+                'seed':config.seed}
+    for object_name, object in zip(['node_classifier','history','subgraph_dict','all_feature_importances','all_watermark_indices','probas','config_dict'],
+                                [ node_classifier,  history,  subgraph_dict,  all_feature_importances,  all_watermark_indices,  probas,  config_dict]):
         with open(os.path.join(results_folder_name,object_name),'wb') as f:
             pickle.dump(object,f)
     print('Node classifier, history, subgraph dict, feature importances, watermark indices, and probas saved in:')
@@ -363,3 +351,9 @@ def merge_kwargs_dicts():
 
 def wrap_title(title, width=40):
     return "\n".join(textwrap.wrap(title, width))
+
+
+def update_seed(current_seed, max_value=10000):
+    # Generate a pseudo-random value based on the current seed
+    new_seed = ((current_seed*43+101)//17)%max_value
+    return new_seed

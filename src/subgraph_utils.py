@@ -2,18 +2,11 @@ import ast
 import config
 import copy
 import matplotlib.pyplot as plt
-import numpy as np
 import networkx as nx
 import os
 import numpy as np 
-import pickle
 import random
-from   sklearn.model_selection import train_test_split
-from   tqdm.notebook import tqdm
 import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
 
 
 
@@ -62,7 +55,7 @@ def determine_whether_to_increment_numHops(dataset_name,sub_size_as_fraction,num
                 return line[3]
         return numHops
 
-def create_khop_subgraph(data, dataset_name, central_node, numHops, max_num_nodes, use_train_mask, avoid_nodes):
+def create_khop_subgraph(data, dataset_name, central_node, numHops, max_num_nodes, use_train_mask, avoid_nodes, seed):
     original_numHops = numHops
     if dataset_name in ['CORA','CiteSeer','PubMed','Reddit','Reddit2','CS','Flickr','computers','photo']:
         mask = torch.tensor([True]*len(data.x)) # initially, "mask" blocks nothing
@@ -90,6 +83,7 @@ def create_khop_subgraph(data, dataset_name, central_node, numHops, max_num_node
                 print(f'Some subgraphs may be smaller than desired (this one is length {new_len}).')
         if max_num_nodes is not None:
             try:
+                random.seed(seed)
                 subgraph_node_idx = torch.tensor(random.sample(subgraph_node_idx.tolist(),max_num_nodes))
             except:
                 print('max_num_nodes exceeds subgraph sizes; no need to cap number of nodes')
@@ -115,9 +109,10 @@ def create_khop_subgraph(data, dataset_name, central_node, numHops, max_num_node
     data_sub = Data(x=data.x[subgraph_node_idx], edge_index=subgraph_edge_idx, y=data.y[subgraph_node_idx])
     return data_sub, subgraph_node_idx, numHops
 
-def create_random_subgraph(data, subgraph_size, mask=None, avoid_nodes=None, verbose=True):
+def create_random_subgraph(data, subgraph_size, mask=None, avoid_nodes=None, verbose=False, seed=0):
     num_nodes = data.num_nodes
     num_selected_nodes = subgraph_size
+    torch.manual_seed(seed)
     nodes_random_order = torch.randperm(num_nodes)
     if mask is not None:
         nodes_random_order = torch.tensor([n.item() for n in nodes_random_order if mask[n.item()] is not False])
@@ -138,10 +133,11 @@ def create_random_subgraph(data, subgraph_size, mask=None, avoid_nodes=None, ver
     return sub_data, selected_nodes
 
 
-def create_rwr_subgraph(data, start_node, restart_prob=0.15, subgraph_size=50, max_steps=1000, mask=None, avoid_nodes=None):
+def create_rwr_subgraph(data, start_node, restart_prob=0.15, subgraph_size=50, max_steps=1000, mask=None, avoid_nodes=None, seed=0):
     G = to_networkx(data, to_undirected=True)
     subgraph_nodes = set([start_node])
     current_node = start_node
+    random.seed(seed)
 
     for _ in range(max_steps):
         try:
@@ -174,17 +170,11 @@ def create_rwr_subgraph(data, start_node, restart_prob=0.15, subgraph_size=50, m
 
     return sub_data, subgraph_node_idx
 
-def generate_subgraph(data, dataset_name, kwargs, central_node=None, avoid_nodes=[], use_train_mask=True, overrule_size_info=False, explicit_size_choice=10,show=True):
+def generate_subgraph(data, dataset_name, kwargs, central_node=None, avoid_nodes=[], use_train_mask=True, overrule_size_info=False, explicit_size_choice=10,show=True, seed=0):
     data = copy.deepcopy(data)
-    numSubgraphs    = kwargs['numSubgraphs']
-    # fraction        = kwargs['fraction']
     sub_size_as_fraction        = kwargs['subgraph_size_as_fraction']
     total_num_nodes = sum(data.train_mask)
-    # subgraph_size   = int(fraction*total_num_nodes/numSubgraphs)
     subgraph_size   = int(sub_size_as_fraction*total_num_nodes)
-    print('subgraph size as fraction:',sub_size_as_fraction)
-    print('total_num_nodes:',total_num_nodes)
-    print('numSubgraphs:',numSubgraphs)
 
     G = to_networkx(data, to_undirected=True)
 
@@ -202,19 +192,19 @@ def generate_subgraph(data, dataset_name, kwargs, central_node=None, avoid_nodes
         if central_node is None:
             ranked_node_indices = rank_training_nodes_by_degree(dataset_name, data, max_degree)
             central_node = ranked_node_indices[0]
-        data_sub, subgraph_node_idx, numHops = create_khop_subgraph(data, dataset_name, central_node, numHops, subgraph_size, use_train_mask, avoid_nodes)
+        data_sub, subgraph_node_idx, numHops = create_khop_subgraph(data, dataset_name, central_node, numHops, subgraph_size, use_train_mask, avoid_nodes, seed=seed)
         print(f"numHops inside generate_subgraph before update: {numHops}")
         kwargs['khop_kwargs']['numHops']=numHops # may have changed in create_khop_subgraph if the numHops was insufficient for desired subgraph size
         print(f"kwargs['khop_kwargs']['numHops'] inside generate_subgraph after update: {kwargs['khop_kwargs']['numHops']}")
         subgraph_signature = central_node
     elif kwargs['method']=='random':
-        data_sub, subgraph_node_idx = create_random_subgraph(data, subgraph_size, data.train_mask, avoid_nodes)
+        data_sub, subgraph_node_idx = create_random_subgraph(data, subgraph_size, data.train_mask, avoid_nodes, seed=seed)
         subgraph_signature = '_'.join([str(s) for s in subgraph_node_idx.tolist()])
     elif kwargs['method']=='random_walk_with_restart':
         assert central_node is not None
         restart_prob = kwargs['rwr_kwargs']['restart_prob']
         max_steps    = kwargs['rwr_kwargs']['max_steps']
-        data_sub, subgraph_node_idx = create_rwr_subgraph(data, central_node, restart_prob=restart_prob, subgraph_size=subgraph_size, max_steps=max_steps, mask=data.train_mask, avoid_nodes=avoid_nodes)
+        data_sub, subgraph_node_idx = create_rwr_subgraph(data, central_node, restart_prob=restart_prob, subgraph_size=subgraph_size, max_steps=max_steps, mask=data.train_mask, avoid_nodes=avoid_nodes, seed=seed)
         subgraph_signature = '_'.join([str(s) for s in subgraph_node_idx.tolist()])
 
     # print(f'Subgraph size: {len(subgraph_node_idx)} ({np.round(len(data_sub.x)/sum(data.train_mask),4)} of training data)')
@@ -236,24 +226,6 @@ def generate_subgraph(data, dataset_name, kwargs, central_node=None, avoid_nodes
     return data_sub, subgraph_signature, subgraph_node_idx
 
 
-def give_subgraph_example(dataset_name, graph_to_watermark, numHops, compare_to_full=False, max_degree=None):
-    if dataset_name=='PubMed':
-        node_indices_to_watermark = [18745, 18728, 18809]
-    else:
-        ranked_nodes = rank_training_nodes_by_degree(dataset_name, graph_to_watermark, max_degree=max_degree)
-        node_indices_to_watermark = ranked_nodes[:1]
-
-    for node_index_to_watermark in node_indices_to_watermark:
-        print(node_index_to_watermark)
-        data_sub, _, subgraph_node_idx = generate_subgraph(graph_to_watermark, dataset_name, numHops, node_index_to_watermark=node_index_to_watermark, show=True)
-        if compare_to_full==True:
-            subgraph_node_idx, subgraph_edge_idx, _, _ = k_hop_subgraph(node_index_to_watermark, numHops, edge_index=graph_to_watermark.edge_index, num_nodes=graph_to_watermark.num_nodes, relabel_nodes=True)
-            data_sub = Data(x=graph_to_watermark.x[subgraph_node_idx], edge_index=subgraph_edge_idx, y=graph_to_watermark.y[subgraph_node_idx])
-            G_sub = to_networkx(data_sub, to_undirected=True)
-            plt.figure(figsize=(5, 3))
-            nx.draw_networkx(G_sub, with_labels=False,  node_color = 'blue', node_size=30)
-            plt.title(f'{numHops}-hop subgraph centered at node {node_index_to_watermark} -- training mask not applied')
-            plt.show()
 
 
 def get_1_hop_edge_index(data, central_node, mask=None):
