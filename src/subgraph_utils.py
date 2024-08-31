@@ -172,7 +172,7 @@ def create_rwr_subgraph(data, start_node, restart_prob=0.15, subgraph_size=50, m
 
 def generate_subgraph(data, dataset_name, kwargs, central_node=None, avoid_nodes=[], use_train_mask=True, overrule_size_info=False, explicit_size_choice=10,show=True, seed=0):
     data = copy.deepcopy(data)
-    sub_size_as_fraction        = kwargs['subgraph_size_as_fraction']
+    sub_size_as_fraction = kwargs['subgraph_size_as_fraction']
     total_num_nodes = sum(data.train_mask)
     subgraph_size   = int(sub_size_as_fraction*total_num_nodes)
 

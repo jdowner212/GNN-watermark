@@ -87,10 +87,10 @@ def get_optimization_tag():
     
     if clf_only==False:
         tag += f'_coefWmk{coef_wmk}'
-        if optimization_kwargs['sacrifice_kwargs']['method'] == 'subgraph_node_indices':
-            tag += f'_sacrifice{optimization_kwargs['sacrifice_kwargs']["percentage"]}subNodes'
-        elif optimization_kwargs['sacrifice_kwargs']['method'] == 'train_node_indices':
-            tag += f'_sacrifice{optimization_kwargs['sacrifice_kwargs']["percentage"]}trainNodes'
+        # if optimization_kwargs['sacrifice_kwargs']['method'] == 'subgraph_node_indices':
+            # tag += f'_sacrifice{optimization_kwargs['sacrifice_kwargs']["percentage"]}subNodes'
+        # elif optimization_kwargs['sacrifice_kwargs']['method'] == 'train_node_indices':
+            # tag += f'_sacrifice{optimization_kwargs['sacrifice_kwargs']["percentage"]}trainNodes'
     if optimization_kwargs['regularization_type'] is not None:
         tag += f'_{optimization_kwargs["regularization_type"]}'
         if optimization_kwargs['regularization_type']=='L2':
@@ -208,7 +208,7 @@ def get_config_name(dataset_name):
     # print('optimization_kwargs:',optimization_kwargs)
     # Model Tag Construction
     # model_tag = get_model_tag()#node_classifier_kwargs)
-    seed_tag = get_seed_tag()
+    # seed_tag = get_seed_tag()
     wmk_tag = get_watermark_tag(#watermark_kwargs, 
                                 dataset_name)
     subgraph_tag = get_subgraph_tag(#subgraph_kwargs, 
@@ -223,13 +223,12 @@ def get_config_name(dataset_name):
     optimization_kwargs = config.optimization_kwargs
     clf_only = optimization_kwargs['clf_only']
     if clf_only==False:
-        config_name = f'{wmk_tag}_{subgraph_tag}_{watermark_loss_tag}_{augment_tag}_{optimization_tag}_{regression_tag}_{seed_tag}'
+        config_name = f'{wmk_tag}_{subgraph_tag}_{watermark_loss_tag}_{augment_tag}_{optimization_tag}_{regression_tag}'#_{seed_tag}'
     elif clf_only==True:
-        config_name = f'clf_only_{augment_tag}_{optimization_tag}_{seed_tag}'
+        config_name = f'clf_only_{augment_tag}_{optimization_tag}'#_{seed_tag}'
     return config_name
 
-def get_results_folder_name(dataset_name):#, optimization_kwargs, node_classifier_kwargs, watermark_kwargs, subgraph_kwargs, augment_kwargs, watermark_loss_kwargs, regression_kwargs):
-    print('get_results_folder: seed =',config.seed)
+def get_results_folder_name(dataset_name):
     """
     Generate the folder name for storing results based on various configuration parameters.
 
@@ -246,14 +245,24 @@ def get_results_folder_name(dataset_name):#, optimization_kwargs, node_classifie
         str: The generated folder name for storing results.
     """
     config_name = get_config_name(dataset_name)
+    seed_tag = get_seed_tag()
     model_tag = get_model_tag()
-    model_folder_name = model_tag
     dataset_folder_name = os.path.join(results_dir, dataset_name)
+    model_folder_name = os.path.join(dataset_folder_name, model_tag)
+    model_folder_seed_version_name = os.path.join(model_folder_name, seed_tag)
 
-    if os.path.exists(os.path.join(dataset_folder_name, model_folder_name))==False:
-        os.mkdir(os.path.join(dataset_folder_name, model_folder_name))
+    if os.path.exists(dataset_folder_name)==False:
+        os.mkdir(dataset_folder_name)
+    if os.path.exists(model_folder_name)==False:
+        os.mkdir(model_folder_name)
+    if os.path.exists(model_folder_seed_version_name)==False:
+        os.mkdir(model_folder_seed_version_name)
+    # if os.path.exists(os.path.join(dataset_folder_name, model_folder_name))==False:
+    #     os.mkdir(os.path.join(dataset_folder_name, model_folder_name))
+    # if os.path.exists(os.path.join(dataset_folder_name, model_folder_name,))==False:
+    #     os.mkdir(os.path.join(dataset_folder_name, model_folder_name))
 
-    return os.path.join(dataset_folder_name, model_folder_name, config_name)
+    return model_folder_seed_version_name #os.path.join(dataset_folder_name, model_folder_name, config_name, seed_tag)
 
 def item_not_in_any_list(item, list_of_lists):
     for sublist in list_of_lists:
@@ -262,7 +271,7 @@ def item_not_in_any_list(item, list_of_lists):
     return True
 
 
-def save_results(dataset_name, node_classifier, history, subgraph_dict=None, all_feature_importances=None, all_watermark_indices=None, probas=None):
+def save_results(dataset_name, node_classifier, history, subgraph_dict=None, all_feature_importances=None, all_watermark_indices=None):#, probas=None):
     results_folder_name = get_results_folder_name(dataset_name)
     if os.path.exists(results_folder_name)==False:
         os.mkdir(results_folder_name)
@@ -274,8 +283,10 @@ def save_results(dataset_name, node_classifier, history, subgraph_dict=None, all
                 'watermark_loss_kwargs':config.watermark_loss_kwargs,
                 'augment_kwargs':config.augment_kwargs,
                 'seed':config.seed}
-    for object_name, object in zip(['node_classifier','history','subgraph_dict','all_feature_importances','all_watermark_indices','probas','config_dict'],
-                                [ node_classifier,  history,  subgraph_dict,  all_feature_importances,  all_watermark_indices,  probas,  config_dict]):
+    for object_name, object in zip(['node_classifier','history','subgraph_dict','all_feature_importances','all_watermark_indices',#'probas',
+                                    'config_dict'],
+                                [ node_classifier,  history,  subgraph_dict,  all_feature_importances,  all_watermark_indices,  #probas,  
+                                 config_dict]):
         with open(os.path.join(results_folder_name,object_name),'wb') as f:
             pickle.dump(object,f)
     print('Node classifier, history, subgraph dict, feature importances, watermark indices, and probas saved in:')
@@ -357,3 +368,11 @@ def update_seed(current_seed, max_value=10000):
     # Generate a pseudo-random value based on the current seed
     new_seed = ((current_seed*43+101)//17)%max_value
     return new_seed
+
+
+def check_grads(node_classifier, epoch, tag='A'):
+    grad_norm = 0
+    for param in node_classifier.parameters():
+        if param.grad is not None:
+            grad_norm += param.grad.norm().item()
+    print(f"Epoch {epoch} {tag}: Gradient norm = {grad_norm}")

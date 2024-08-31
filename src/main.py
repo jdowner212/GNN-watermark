@@ -62,7 +62,7 @@ if __name__ == '__main__':
     parser.add_argument('--similar_subgraph_p_swap',                                       type=float,             default=config.optimization_kwargs['p_swap'],                                               help='If using similar subgraph penalty, the probability of any subgraph nodes getting swapped with another choice.')
     parser.add_argument('--shifted_subgraph_loss_coef',                   type=float,             default=config.optimization_kwargs['shifted_subgraph_loss_coef'],                           help='If using similar subgraph penalty, the coefficient on the corresponding loss term.')
     parser.add_argument('--sacrifice_method',                             type=str,               default=config.optimization_kwargs['sacrifice_kwargs']['method'],                           help='If sacrificing some nodes from training, the method to use.')
-    parser.add_argument('--sacrifice_percentage',                         type=float,             default=config.optimization_kwargs['sacrifice_kwargs']['percentage'],                       help='If sacrificing some nodes from training, the proportion of the chosen subset to use.')
+    # parser.add_argument('--sacrifice_percentage',                         type=float,             default=config.optimization_kwargs['sacrifice_kwargs']['percentage'],                       help='If sacrificing some nodes from training, the proportion of the chosen subset to use.')
     parser.add_argument('--clf_only',                                     type=str2bool,          default=config.optimization_kwargs['clf_only'],                                             help='Whether to train for classificaiton only (will skip watermarking).')
     parser.add_argument('--coefWmk',                                      type=float,             default=config.optimization_kwargs['coefWmk_kwargs']['coefWmk'],                            help='The coefficient on the watermarking loss term.')
     parser.add_argument('--coefWmk_schedule',                             type=str2bool,          default=config.optimization_kwargs['coefWmk_kwargs']['schedule_coef_wmk'],                  help='Whether to increase coef_wmk in a gradual/scheduled manner.')
@@ -130,7 +130,7 @@ if __name__ == '__main__':
     config.optimization_kwargs['p_swap']                                                = args.similar_subgraph_p_swap
     config.optimization_kwargs['shifted_subgraph_loss_coef']                            = args.shifted_subgraph_loss_coef
     config.optimization_kwargs['sacrifice_kwargs']['method']                            = args.sacrifice_method
-    config.optimization_kwargs['sacrifice_kwargs']['percentage']                        = args.sacrifice_percentage
+    # config.optimization_kwargs['sacrifice_kwargs']['percentage']                        = args.sacrifice_percentage
     config.optimization_kwargs['clf_only']                                              = args.clf_only
     config.optimization_kwargs['coefWmk_kwargs']['coefWmk']                             = args.coefWmk
     config.optimization_kwargs['coefWmk_kwargs']['schedule_coef_wmk']                   = args.coefWmk_schedule
@@ -186,13 +186,8 @@ if __name__ == '__main__':
         n_features = data.x.shape[1]
         print('n_features:',n_features)
         c = config.subgraph_kwargs['numSubgraphs']
-
         mu_natural, sigma_natural = get_natural_match_distribution(n_features, c)
-        # p_natural_match = 2*(0.5**(c))
-        # mu_natural = p_natural_match*n_features
         print('mu_natural:',mu_natural)
-        # var_natural = n_features*p_natural_match*(1-p_natural_match)
-        # sigma_natural = np.sqrt(var_natural)
         print('sigma_natural:',sigma_natural)
         c_LB=0.99
         c_t=0.99
@@ -210,7 +205,7 @@ if __name__ == '__main__':
     for _ in range(args.num_iters):
         Trainer_ = Trainer(data, dataset_name)
 
-        node_classifier, history, subgraph_dict, all_feature_importances, all_watermark_indices, probas = Trainer_.train(debug_multiple_subgraphs=False, save=True, print_every=1)
+        node_classifier, history, subgraph_dict, all_feature_importances, all_watermark_indices = Trainer_.train(debug_multiple_subgraphs=False, save=True, print_every=1)
         primary_loss_curve, watermark_loss_curve, final_betas, watermarks, percent_matches, percent_match_mean, percent_match_std, primary_acc_curve, watermark_acc_curve, train_acc, val_acc, match_counts, match_count_confidence = get_performance_trends(history, subgraph_dict)
 
         epoch = config.optimization_kwargs['epochs']-1
@@ -239,51 +234,6 @@ if __name__ == '__main__':
         final_plot(history, title, percent_matches, primary_loss_curve, watermark_loss_curve, train_acc, plot_name=plot_name,save=save_fig)
         print(final_performance)
         
-# ##      
-#         if test_pruning==True:
-
-
-#             num_subgraphs = len(subgraph_dict)
-#             prune_rates = []
-#             train_accs = []
-#             val_accs = []
-#             match_rates = []
-#             confidence_levels = []
-#             text_path = os.path.join(args.model_path, 'pruning_results.txt')
-#             results_folder_name = get_results_folder_name(dataset_name)
-#             model_path =os.path.join(results_folder_name,'node_classifier')
-#             for amount in np.linspace(0,1,11):
-#                 node_classifier_original = pickle.load(open(model_path,'rb'))
-#                 apply_pruning(node_classifier_original,amount=amount)
-#                 # _ = calculate_sparsity(node_classifier_original)
-
-                
-#                 watermark_match_rates, acc_trn, acc_val, observed_match_count, target_number_matches, observed_matches_confidence = test_node_classifier(node_classifier_original, 
-#                                                                                                                                                          data, 
-#                                                                                                                                                          subgraph_dict, 
-#                                                                                                                                                          config.watermark_loss_kwargs, 
-#                                                                                                                                                          config.optimization_kwargs, 
-#                                                                                                                                                          config.regression_kwargs, 
-#                                                                                                                                                          config.node_classifier_kwargs)
-#                 prune_rates.append(amount)
-#                 train_accs.append(acc_trn)
-#                 val_accs.append(acc_val)
-#                 mean_watermark_match_rate = np.mean(watermark_match_rates)
-#                 watermark_match_rates.append(mean_watermark_match_rate)
-#                 if mean_watermark_match_rate==0:
-#                     observed_matches_confidence = np.nan
-#                 confidence_levels.append(observed_matches_confidence)
-                
-
-#                 print(f'Prune rate: {np.round(amount, 3)}')
-#                 print(f'Train acc: {np.round(acc_trn,3)}'.ljust(20) + f'Val acc: {np.round(acc_val,3)}'.ljust(17) + f'Mean watermark match rate: {np.round(mean_watermark_match_rate,3)}'.ljust(36) + f'Observed match count: {observed_match_count}'.ljust(32) + f'Target match count: {target_number_matches}'.ljust(33) + f'Confidence: {np.round(observed_matches_confidence,3)}')
-#                 print()
-            
-#                 with open(text_path,'a') as f:
-#                     f.write(f'Prune rate: {np.round(amount, 3)}\n')
-#                     f.write(f'Train acc: {np.round(acc_trn,3)}'.ljust(20) + f'Val acc: {np.round(acc_val,3)}'.ljust(17) + f'Mean watermark match rate: {np.round(mean_watermark_match_rate,3)}'.ljust(36) + f'Observed match count: {observed_match_count}'.ljust(32) + f'Target match count: {target_number_matches}'.ljust(33) + f'Confidence: {np.round(observed_matches_confidence,3)}\n\n')
-#                 f.close()
-# ##
 
 
         seed += 1

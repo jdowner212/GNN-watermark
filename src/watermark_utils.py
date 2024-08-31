@@ -106,25 +106,28 @@ def collect_subgraphs_within_single_graph_for_watermarking(data, dataset_name, u
 
 
 
-def select_unimportant_watermark_indices_shared(num_features,subgraph_dict, probas, probas_dict, len_watermark, use_concat, use_avg):
+def select_unimportant_watermark_indices_shared(num_features,subgraph_dict, #probas, 
+                                                probas_dict, len_watermark, use_concat, use_avg):
     regression_kwargs = config.regression_kwargs
     if use_concat:
         all_indices = torch.concat([subgraph_dict[k]['nodeIndices'] for k in subgraph_dict.keys()])
         all_x = torch.concat([subgraph_dict[k]['subgraph'].x for k in subgraph_dict.keys()])
-        if config.optimization_kwargs['separate_forward_passes_per_subgraph']==True:
-            all_probas = torch.concat([probas_dict[k] for k in subgraph_dict.keys()])
-        else:
-            all_probas = probas[all_indices]
+        # if config.optimization_kwargs['separate_forward_passes_per_subgraph']==True:
+        #     all_probas = torch.concat([probas_dict[k] for k in subgraph_dict.keys()])
+        # else:
+        #     all_probas = probas[all_indices]
+        all_probas = torch.concat([probas_dict[k] for k in subgraph_dict.keys()])
         beta= regress_on_subgraph(all_x, all_probas, regression_kwargs)
     elif use_avg:
         betas = []
         for k in subgraph_dict.keys():
-            indices_this_sub = subgraph_dict[k]['nodeIndices']
+            # indices_this_sub = subgraph_dict[k]['nodeIndices']
             x_this_sub = subgraph_dict[k]['subgraph'].x
-            if config.optimization_kwargs['separate_forward_passes_per_subgraph']==True:
-                probas_this_sub = probas_dict[k]
-            else:
-                probas_this_sub = probas[indices_this_sub]
+            probas_this_sub = probas_dict[k]
+            # if config.optimization_kwargs['separate_forward_passes_per_subgraph']==True:
+            #     probas_this_sub = probas_dict[k]
+            # else:
+            #     probas_this_sub = probas[indices_this_sub]
             beta_this_sub= regress_on_subgraph(x_this_sub, probas_this_sub, regression_kwargs)
             betas.append(beta_this_sub)
         beta = torch.mean(torch.vstack(betas),dim=0)
@@ -151,14 +154,16 @@ def select_unimportant_watermark_indices_shared(num_features,subgraph_dict, prob
 
     return all_indices, all_feature_importances, all_betas
 
-def select_unimportant_watermark_indices_individual(num_features,subgraph_dict, k, probas, probas_dict, len_watermark):
+def select_unimportant_watermark_indices_individual(num_features,subgraph_dict, k, #probas, 
+                                                    probas_dict, len_watermark):
     regression_kwargs = config.regression_kwargs
-    indices_this_sub = subgraph_dict[k]['nodeIndices']
+    # indices_this_sub = subgraph_dict[k]['nodeIndices']
     x_this_sub = subgraph_dict[k]['subgraph'].x
-    if config.optimization_kwargs['separate_forward_passes_per_subgraph']==True:
-        these_probas = probas_dict[k]
-    else:
-        these_probas = probas[indices_this_sub]
+    these_probas = probas_dict[k]
+    # if config.optimization_kwargs['separate_forward_passes_per_subgraph']==True:
+    #     these_probas = probas_dict[k]
+    # else:
+    #     these_probas = probas[indices_this_sub]
     beta= regress_on_subgraph(x_this_sub, these_probas, regression_kwargs)
     feature_importance = beta.abs()
     ordered_watermark_indices = sorted(range(num_features), key=lambda item: feature_importance[item])
@@ -177,25 +182,28 @@ def select_unimportant_watermark_indices_individual(num_features,subgraph_dict, 
     return watermark_indices, feature_importance, beta
 
 
-def select_unimportant_watermark_indices(num_features,subgraph_dict, probas, probas_dict):
+def select_unimportant_watermark_indices(num_features,subgraph_dict, #probas, 
+                                         probas_dict):
     watermark_kwargs = config.watermark_kwargs
     use_concat, use_avg, use_indiv, num_subgraphs, len_watermark, message = describe_selection_config(num_features, watermark_kwargs, subgraph_dict)
     if num_subgraphs==1:
         k = list(subgraph_dict.keys())[0]
-        watermark_indices, feature_importance, beta = select_unimportant_watermark_indices_individual(num_features, subgraph_dict, k, probas, probas_dict, len_watermark)
+        watermark_indices, feature_importance, beta = select_unimportant_watermark_indices_individual(num_features, subgraph_dict, k, #probas, 
+                                                                                                      probas_dict, len_watermark)
         each_subgraph_watermark_indices, each_subgraph_feature_importances, each_subgraph_betas = [watermark_indices], [feature_importance], [beta]
 
     elif num_subgraphs>1:
         if use_indiv:
             each_subgraph_watermark_indices, each_subgraph_feature_importances, each_subgraph_betas = [],[],[]
             for k in subgraph_dict.keys():
-                watermark_indices, feature_importance, beta = select_unimportant_watermark_indices_individual(num_features, subgraph_dict, k, probas, probas_dict, len_watermark)
+                watermark_indices, feature_importance, beta = select_unimportant_watermark_indices_individual(num_features, subgraph_dict, k, #probas, 
+                                                                                                              probas_dict, len_watermark)
                 each_subgraph_watermark_indices.append(watermark_indices)
                 each_subgraph_feature_importances.append(feature_importance)
                 each_subgraph_betas.append(beta)
         else:
-            each_subgraph_watermark_indices, each_subgraph_feature_importances, each_subgraph_betas = select_unimportant_watermark_indices_shared(num_features, subgraph_dict, probas, probas_dict, len_watermark, use_concat, use_avg)
-
+            each_subgraph_watermark_indices, each_subgraph_feature_importances, each_subgraph_betas = select_unimportant_watermark_indices_shared(num_features, subgraph_dict, #probas, 
+                                                                                                                                                  probas_dict, len_watermark, use_concat, use_avg)
     assert message is not None
     print(message)
     return each_subgraph_watermark_indices, each_subgraph_feature_importances, each_subgraph_betas
@@ -215,8 +223,10 @@ def collect_watermark_values(len_watermark, seed):
     return nonzero_watermark_values
 
 
-def create_watermarks_at_unimportant_indices(num_features, subgraph_dict, probas, probas_dict, seed):
-    each_subgraph_watermark_indices, each_subgraph_feature_importances, _ = select_unimportant_watermark_indices(num_features, subgraph_dict, probas, probas_dict)
+def create_watermarks_at_unimportant_indices(num_features, subgraph_dict,# probas, 
+                                             probas_dict, seed):
+    each_subgraph_watermark_indices, each_subgraph_feature_importances, _ = select_unimportant_watermark_indices(num_features, subgraph_dict, #probas, 
+                                                                                                                 probas_dict)
     nonzero_watermark_values = collect_watermark_values(len(each_subgraph_watermark_indices[0]), seed)
     watermarks=[]
     for i in range(len(subgraph_dict)):
@@ -249,7 +259,8 @@ def create_watermarks_at_most_represented_indices(num_subgraphs, len_watermark, 
         watermarks.append(this_watermark)
     return watermarks
 
-def apply_watermark(watermark_type, num_features, len_watermark, subgraph_dict, x=None, probas=None, probas_dict=None, watermark_kwargs=None, seed=0):
+def apply_watermark(watermark_type, num_features, len_watermark, subgraph_dict, x=None, #probas=None, 
+                    probas_dict=None, watermark_kwargs=None, seed=0):
     each_subgraph_feature_importances=None
     if watermark_type=='basic':
         assert watermark_kwargs is not None
@@ -258,9 +269,10 @@ def apply_watermark(watermark_type, num_features, len_watermark, subgraph_dict, 
         watermark_indices = torch.where(watermark!=0)[0]
         each_subgraph_watermark_indices = [watermark_indices]*(len(subgraph_dict))
     elif watermark_type=='unimportant':
-        assert probas is not None
+        # assert probas is not None
         assert probas_dict is not None
-        watermarks, each_subgraph_watermark_indices, each_subgraph_feature_importances = create_watermarks_at_unimportant_indices(num_features, subgraph_dict, probas, probas_dict)
+        watermarks, each_subgraph_watermark_indices, each_subgraph_feature_importances = create_watermarks_at_unimportant_indices(num_features, subgraph_dict, #probas, 
+                                                                                                                                  probas_dict)
     elif watermark_type=='most_represented':
         assert x is not None
         most_represented_indices = select_most_represented_feature_indices(x, len_watermark)
