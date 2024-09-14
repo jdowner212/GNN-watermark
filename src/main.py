@@ -4,6 +4,7 @@ import argparse
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
 
+
 def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
@@ -27,24 +28,39 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description = 'Watermarking settings')
     parser.add_argument('--dataset', type=str, default='computers',help='Dataset Name')
     parser.add_argument('--seed',                                             type=int,               default=0,  help='Random seed.')
+    parser.add_argument('--create_or_load_data',    type=str,               default='load',  help='Whether to build dataset from scratch or load it -- either "create" or "load".')
+    parser.add_argument('--save_data',    action='store_true',               default=False,  help='Whether to build dataset from scratch or load it -- either "create" or "load".')
+
     args, _ = parser.parse_known_args()
     dataset_name = args.dataset
     seed = args.seed
+    assert args.create_or_load_data in ['create','load']
+    print('*********')
+    print('args.create_or_load:',args.create_or_load_data)
+    if args.create_or_load_data=='create':
+        print('create like i thoughttt')
+    load_data = True if args.create_or_load_data=="load" else False
+    print('looad1:',load_data)
+    save_data = args.save_data
+    print('save1:',save_data)
+    print('*********')
 
-
-
+    parser.add_argument('--train_ratio',      type=float,   default=dataset_attributes[dataset_name]['train_ratio'],  help='Ratio of dataset comprising train set.')
+    args, _ = parser.parse_known_args()
+    val_ratio = test_ratio = (1-args.train_ratio)/2
     if dataset_attributes[dataset_name]['single_or_multi_graph']=='single':
-        dataset = prep_data(dataset_name=dataset_name, location='default', batch_size='default', transform_list='default',  train_val_test_split=[0.9,0.05,0.05], seed=seed)
+        dataset = prep_data(dataset_name=dataset_name, location='default', batch_size='default', transform_list='default',  train_val_test_split=[args.train_ratio,val_ratio,test_ratio], seed=seed, save=save_data, load=load_data)
         graph_to_watermark = data = dataset[0]
     elif dataset_attributes[dataset_name]['single_or_multi_graph']=='multi':
-        [train_dataset, val_dataset, test_dataset], [train_loader, val_loader, test_loader] = prep_data(dataset_name=dataset_name, location='default', batch_size='default', transform_list='default', train_val_test_split=[0.9,0.05,0.05])
+        [train_dataset, val_dataset, test_dataset], [train_loader, val_loader, test_loader] = prep_data(dataset_name=dataset_name, location='default', batch_size='default', transform_list='default', train_val_test_split=[args.train_ratio,val_ratio,test_ratio])
         graph_to_watermark = train_dataset[0]
 
     get_presets(dataset,dataset_name)
-    parser.add_argument('--wmk_size_auto_compute',                            type=str2bool,          default=True,                                                                               help='If True, will automatically compute recommended watermark size.')
+    # parser.add_argument('--wmk_size_auto_compute',                            type=str2bool,          default=True,                                                                               help='If True, will automatically compute recommended watermark size.')
     parser.add_argument('--num_iters',                                        type=int,               default=1,                                                                                  help='Number of times to run the experiment, so we can obtain an average.')
     parser.add_argument('--prune',                                            action='store_true',                                                                                                help='Test with pruning.')
     parser.add_argument('--fine_tune',                                        action='store_true',                                                                                                help='Test with fine-tuning.')
+    parser.add_argument('--confidence', type=float, default=0.999999, help='confidence value for recommending watermark size')
 
     parser.add_argument('--arch',                                             type=str,               default=config.node_classifier_kwargs['arch'],                                              help='GNN architecture (GAT, GCN, GraphConv, SAGE).')
     parser.add_argument('--activation',                                       type=str,               default=config.node_classifier_kwargs['activation'],                                        help='relu or elu.')
@@ -87,6 +103,7 @@ if __name__ == '__main__':
     parser.add_argument('--subgraph_method',                                  type=str,               default=config.subgraph_kwargs['method'],                                                   help='Subgraph method (khop, random, rwr).')
     parser.add_argument('--subgraph_size_as_fraction',                                type=float,             default=config.subgraph_kwargs['subgraph_size_as_fraction'],                        help='Fraction of possible subgraph nodes comprising each watermarked subgraph.')
     parser.add_argument('--numSubgraphs',                                     type=int,               default=config.subgraph_kwargs['numSubgraphs'],                                             help='Number of subgraphs to watermark.')
+
     parser.add_argument('--khop_autoChooseSubGs',                             type=str2bool,          default=config.subgraph_kwargs['khop_kwargs']['autoChooseSubGs'],                           help='If True, will automatically build the khop subgraphs to use for watermarking.')
     parser.add_argument('--khop_nodeIndices',                                 type=ast.literal_eval,  default=config.subgraph_kwargs['khop_kwargs']['nodeIndices'],                               help='If not using automatic subgraph generation, will use these indices to construct subgraph.')
     parser.add_argument('--khop_numHops',                                     type=int,               default=config.subgraph_kwargs['khop_kwargs']['numHops'],                                   help='Number of hops to use when building khop subgraphs for watermarking.')
@@ -152,9 +169,9 @@ if __name__ == '__main__':
     config.watermark_kwargs['unimportant_selection_kwargs']['multi_subg_strategy']      = args.unimportant_selection_multi_subg_strategy
 
     config.subgraph_kwargs['regenerate']                                                = args.subgraph_regenerate
+    config.subgraph_kwargs['numSubgraphs']                                              = args.numSubgraphs
     config.subgraph_kwargs['method']                                                    = args.subgraph_method
     config.subgraph_kwargs['subgraph_size_as_fraction']                                 = args.subgraph_size_as_fraction
-    config.subgraph_kwargs['numSubgraphs']                                              = args.numSubgraphs
     config.subgraph_kwargs['khop_kwargs']['autoChooseSubGs']                            = args.khop_autoChooseSubGs
     config.subgraph_kwargs['khop_kwargs']['nodeIndices']                                = args.khop_nodeIndices
     config.subgraph_kwargs['khop_kwargs']['numHops']                                    = args.khop_numHops
@@ -182,63 +199,96 @@ if __name__ == '__main__':
 
     config.seed = args.seed
 
-    if args.wmk_size_auto_compute==True:
-        n_features = data.x.shape[1]
-        print('n_features:',n_features)
-        c = config.subgraph_kwargs['numSubgraphs']
-        mu_natural, sigma_natural = get_natural_match_distribution(n_features, c)
-        print('mu_natural:',mu_natural)
-        print('sigma_natural:',sigma_natural)
-        c_LB=0.99
-        c_t=0.99
-        recommended_watermark_length = find_min_n_uncertain(n_features, mu_natural, sigma_natural, c_LB, c_t, test_effective=True, verbose=True)
-        print(f'recommended_watermark_length for confidence={c_t}:',recommended_watermark_length)
-        recommended_percent = 100*recommended_watermark_length/n_features
-        print('recommended_percent:',recommended_percent)
+    # if args.wmk_size_auto_compute==True:
+    n_features = data.x.shape[1]
+    print('n_features:',n_features)
+    c = config.subgraph_kwargs['numSubgraphs']
+    mu_natural, sigma_natural = get_natural_match_distribution(n_features, c)
+    print('mu_natural:',mu_natural)
+    print('sigma_natural:',sigma_natural)
 
-        config.watermark_kwargs['percent_of_features_to_watermark']=recommended_percent
+
+    # recommended_watermark_length_ = find_min_n_uncertain(n_features, mu_natural, sigma_natural, 0.99999, 0.99999, test_effective=True, verbose=True)
+    # recommended_percent_ = 100*recommended_watermark_length_/n_features
+    # print(f'recommended_watermark_length for confidence={0.999}:',recommended_watermark_length_)
+
+    c_LB=args.confidence
+    c_t=args.confidence
+    recommended_watermark_length = find_min_n_uncertain(n_features, mu_natural, sigma_natural, c_LB, c_t, test_effective=True, verbose=True)
+    print(f'recommended_watermark_length for confidence={c_t}: {recommended_watermark_length}')
+    recommended_percent = 100*recommended_watermark_length/n_features
+    print(f'recommended_percent: {recommended_percent:.3f}')
+
+    config.watermark_kwargs['percent_of_features_to_watermark']=recommended_percent
 
 
     title_ = f'Separate Forward Passes -- {config.watermark_kwargs['watermark_type']} feature indices'
     title = f'{title_}.\n{config.subgraph_kwargs['numSubgraphs']} subgraphs.\nWatermarking {config.watermark_kwargs['percent_of_features_to_watermark']}% of node features'
     
+    z_t=norm.ppf(args.confidence)
+    target_number_matches = np.ceil(min(mu_natural +z_t*sigma_natural,data.x.shape[1]))
+
     for _ in range(args.num_iters):
-        Trainer_ = Trainer(data, dataset_name)
-
-        node_classifier, history, subgraph_dict, all_feature_importances, all_watermark_indices = Trainer_.train(debug_multiple_subgraphs=False, save=True, print_every=1)
-        primary_loss_curve, watermark_loss_curve, final_betas, watermarks, percent_matches, percent_match_mean, percent_match_std, primary_acc_curve, watermark_acc_curve, train_acc, val_acc, match_counts, match_count_confidence = get_performance_trends(history, subgraph_dict)
-
-        epoch = config.optimization_kwargs['epochs']-1
-        loss_prim = primary_loss_curve[-1]
-        loss_watermark = watermark_loss_curve[-1]
-        percent_match=percent_matches[-1]
-        train_acc=train_acc
-        final_performance = f'Seed {seed}\nEpoch {epoch}: primary_loss={loss_prim:.3f}, watermark_loss={loss_watermark:.3f}, train_acc={train_acc:.3f}, wmk_match={percent_match:.3f}, match_count={match_counts}, match_count_confidence={match_count_confidence:.3f}\n'
-        print("**")
+        Trainer_ = Trainer(data, dataset_name, target_number_matches)
+        results = Trainer_.train(debug_multiple_subgraphs=False, save=True, print_every=1)
         results_folder_name = get_results_folder_name(dataset_name)
-        results_file_name = 'results.txt' if args.fine_tune==False else 'results_fine_tune.txt'
-        model_config_results_filepath = os.path.join(results_folder_name,results_file_name)
+
+        node_classifier = Trainer_.node_classifier
+        node_classifier.eval()
+        log_logits_train = node_classifier(Trainer_.x_train_unaugmented,Trainer_.edge_index_train_unaugmented, 0)
+        acc_train = accuracy(log_logits_train, Trainer_.y_train_unaugmented)
+
+        # edge_index_test, _ = subgraph(trainer.test_mask, data.edge_index, relabel_nodes=True)
+        # x_test, y_test = data.x[data.test_mask], data.y[data.test_mask]
+        node_classifier.eval()
+        log_logits_test = node_classifier(Trainer_.x_test, Trainer_.edge_index_test, 0)
+        acc_test = accuracy(log_logits_test, Trainer_.y_test)
+
+        # edge_index_val, _ = subgraph(data.val_mask, data.edge_index, relabel_nodes=True)
+        # x_val, y_val = data.x[data.val_mask], data.y[data.val_mask]
+        node_classifier.eval()
+        log_logits_val = node_classifier(Trainer_.x_val, Trainer_.edge_index_val, 0)
+        acc_val = accuracy(log_logits_val, Trainer_.y_val)
+        with open(os.path.join(results_folder_name,'Trainer'),'wb') as f:
+            pickle.dump(Trainer_,f)
+
+        if args.clf_only==False:
+            node_classifier, history, subgraph_dict, all_feature_importances, all_watermark_indices  = results
+
+            primary_loss_curve, watermark_loss_curve, final_betas, watermarks, percent_matches, percent_match_mean, percent_match_std, primary_acc_curve, watermark_acc_curve, train_acc, val_acc, test_acc, match_counts_with_zeros, match_counts_without_zeros,match_count_confidence_with_zeros,match_count_confidence_without_zeros = get_performance_trends(history, subgraph_dict)
+
+            epoch = config.optimization_kwargs['epochs']-1
+            loss_prim = primary_loss_curve[-1]
+            loss_watermark = watermark_loss_curve[-1]
+            percent_match=percent_matches[-1]
+            train_acc=train_acc
+
+            final_performance = f'Seed {seed}\nEpoch: {epoch:3d}, L (clf/wmk) = {loss_prim:.3f}/{loss_watermark:.3f}, acc (trn/val/test)= {train_acc:.3f}/{val_acc:.3f}/{test_acc:.3f}, #_match_WMK w/wout 0s = {match_counts_with_zeros}/{match_counts_without_zeros}, conf w/wout 0s = {match_count_confidence_with_zeros:.3f}/{match_count_confidence_without_zeros:.3f}'
+            results_folder_name = get_results_folder_name(dataset_name)
+            results_file_name = 'results.txt' if args.fine_tune==False else 'results_fine_tune.txt'
+            model_config_results_filepath = os.path.join(results_folder_name,results_file_name)
 
 
-        mu_natural, sigma_natural = get_natural_match_distribution(n_features, c)
-        if os.path.exists(model_config_results_filepath)==False:
-            with open(model_config_results_filepath,'w') as f:
-                f.write(f'Natural match distribution: mu={mu_natural:.3f}, sigma={sigma_natural:.3f}\n')
-            f.close()        
-        with open(model_config_results_filepath,'a') as f:
-            f.write(final_performance)
-        f.close()
+            mu_natural, sigma_natural = get_natural_match_distribution(n_features, c)
+            if os.path.exists(model_config_results_filepath)==False:
+                with open(model_config_results_filepath,'w') as f:
+                    f.write(f'Natural match distribution: mu={mu_natural:.3f}, sigma={sigma_natural:.3f}\n')
+                f.close()        
+            with open(model_config_results_filepath,'a') as f:
+                f.write(final_performance)
+            f.close()
 
-        plot_name = dataset_name
-        save_fig=True if args.fine_tune==False else False
-        final_plot(history, title, percent_matches, primary_loss_curve, watermark_loss_curve, train_acc, plot_name=plot_name,save=save_fig)
-        print(final_performance)
+            plot_name = dataset_name
+            save_fig=True if args.fine_tune==False else False
+            final_plot(history, title, percent_matches, primary_loss_curve, watermark_loss_curve, train_acc, plot_name=plot_name,save=save_fig)
+            print(final_performance)
         
-
+        else:
+            node_classifier, history = results
 
         seed += 1
         set_seed(seed)
-        
+        config.seed=seed
 
 
 

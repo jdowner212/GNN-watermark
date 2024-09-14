@@ -69,23 +69,48 @@ class ChooseLargestMaskForTrain(BaseTransform):
     def __repr__(self):
         return 'ChooseLargestMaskForTrain()'
 
+
+class CreateMasksInOrder(BaseTransform):
+    def __call__(self, data):
+        try:
+            train_mask = data.train_mask.clone()
+        except:
+            train_mask=[]
+        try:
+            test_mask = data.test_mask.clone()
+        except:
+            test_mask=[]
+        try:
+            val_mask = data.val_mask.clone()
+        except:
+            val_mask=[]
+        if torch.sum(test_mask)>torch.sum(train_mask) and torch.sum(test_mask)>torch.sum(val_mask):
+            data.train_mask=test_mask
+            data.test_mask=train_mask
+        elif torch.sum(val_mask)>torch.sum(train_mask) and torch.sum(val_mask)>torch.sum(test_mask):
+            data.train_mask=val_mask
+            data.val_mask=train_mask
+        return data
+
+    def __repr__(self):
+        return 'ChooseLargestMaskForTrain()'
+
+
+
 class CreateMaskTransform:
     def __init__(self, train_ratio=0.6, val_ratio=0.2, test_ratio=0.2, seed=0):
         self.train_ratio = train_ratio
         self.val_ratio = val_ratio
         self.test_ratio = test_ratio
         self.seed=seed
-        # print('train ratio:',self.train_ratio)
-        # print('test ratio:',self.test_ratio)
-        # print('val ratio:',self.val_ratio)
-        # print('num nodes:',num_nodes)
 
     def __call__(self, data):
         num_nodes = data.num_nodes
         
         # Generate random indices
         torch.manual_seed(self.seed)
-        indices = torch.randperm(num_nodes)
+        # indices = torch.randperm(num_nodes)
+        indices = torch.tensor(range(num_nodes))
 
         train_size = int(self.train_ratio * num_nodes)
         val_size = int(self.val_ratio * num_nodes)

@@ -110,17 +110,34 @@ def create_khop_subgraph(data, dataset_name, central_node, numHops, max_num_node
     return data_sub, subgraph_node_idx, numHops
 
 def create_random_subgraph(data, subgraph_size, mask=None, avoid_nodes=None, verbose=False, seed=0):
-    num_nodes = data.num_nodes
-    num_selected_nodes = subgraph_size
+    # torch.manual_seed(seed)
+    # num_nodes = data.num_nodes
+    # num_selected_nodes = subgraph_size
+    # nodes_random_order = torch.randperm(num_nodes)
+
+
+    # if mask is not None:
+    #     nodes_random_order = torch.tensor([n.item() for n in nodes_random_order if mask[n.item()] is not False])
+    # if avoid_nodes is not None:
+    #     nodes_random_order = torch.tensor([n.item() for n in nodes_random_order if n not in avoid_nodes])
+    # selected_nodes = nodes_random_order[:num_selected_nodes]
+    # if verbose==True:
+    #     print('selected_nodes:',selected_nodes)
     torch.manual_seed(seed)
-    nodes_random_order = torch.randperm(num_nodes)
-    if mask is not None:
-        nodes_random_order = torch.tensor([n.item() for n in nodes_random_order if mask[n.item()] is not False])
-    if avoid_nodes is not None:
-        nodes_random_order = torch.tensor([n.item() for n in nodes_random_order if n not in avoid_nodes])
-    selected_nodes = nodes_random_order[:num_selected_nodes]
-    if verbose==True:
-        print('selected_nodes:',selected_nodes)
+    num_nodes = data.num_nodes
+
+    # Convert mask and avoid_nodes to sets for efficient lookups
+    mask_set = set(mask.nonzero(as_tuple=True)[0].tolist()) if mask is not None else set(range(num_nodes))
+    avoid_nodes_set = set(avoid_nodes) if avoid_nodes is not None else set()
+
+    # Eligible nodes are those in the mask and not in the avoid list
+    eligible_nodes = list(mask_set - avoid_nodes_set)
+
+    # Randomly sample nodes from the eligible set
+    selected_nodes = torch.tensor(random.sample(eligible_nodes, min(subgraph_size, len(eligible_nodes))))
+
+    if verbose:
+        print('selected_nodes:', selected_nodes)
 
     sub_edge_index, _ = subgraph(selected_nodes, data.edge_index, relabel_nodes=True, num_nodes=num_nodes)
     sub_data = Data(
@@ -171,12 +188,13 @@ def create_rwr_subgraph(data, start_node, restart_prob=0.15, subgraph_size=50, m
     return sub_data, subgraph_node_idx
 
 def generate_subgraph(data, dataset_name, kwargs, central_node=None, avoid_nodes=[], use_train_mask=True, overrule_size_info=False, explicit_size_choice=10,show=True, seed=0):
-    data = copy.deepcopy(data)
+    #data = copy.deepcopy(data)
+    data = data.clone()
     sub_size_as_fraction = kwargs['subgraph_size_as_fraction']
     total_num_nodes = sum(data.train_mask)
     subgraph_size   = int(sub_size_as_fraction*total_num_nodes)
 
-    G = to_networkx(data, to_undirected=True)
+    G = None
 
     if overrule_size_info==True:
         assert isinstance(explicit_size_choice,int)
@@ -210,6 +228,8 @@ def generate_subgraph(data, dataset_name, kwargs, central_node=None, avoid_nodes
     # print(f'Subgraph size: {len(subgraph_node_idx)} ({np.round(len(data_sub.x)/sum(data.train_mask),4)} of training data)')
 
     if show==True:
+        if G==None:
+            G=to_networkx(data, to_undirected=True)
         if kwargs['method']=='khop':
             title = f'{numHops}-hop subgraph centered at node {central_node} (degree={degrees[central_node]})'
         elif kwargs['method']=='random':

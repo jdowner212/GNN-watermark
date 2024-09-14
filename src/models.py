@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from torch_geometric.nn import GATConv, GCNConv, GraphConv, SAGEConv
-
+from torch_geometric.nn.conv import SGConv
 
 
 class GAT(nn.Module):
@@ -249,7 +249,7 @@ class Net(torch.nn.Module):
         self.nLayers = model_kwargs['nLayers'] 
 
 
-        conv_fn = {'GAT': GATConv, 'GCN': GCNConv, 'GraphConv': GraphConv, 'SAGE': SAGEConv}[model_kwargs['arch']]
+        conv_fn = {'GAT': GATConv, 'GCN': GCNConv, 'GraphConv': GraphConv, 'SAGE': SAGEConv, 'SGC': SGConv}[model_kwargs['arch']]
         self.convs = nn.ModuleList()
         if model_kwargs['arch']=='GAT':
             heads_1 = model_kwargs['heads_1']

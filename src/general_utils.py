@@ -18,11 +18,12 @@ from models import *
 
 
 
-def count_matches(features):
+def count_matches(features, ignore_zeros=True):
     num_matches = 0
     for i in range(features.shape[1]):
         if torch.all(features[:, i] == features[0, i]):
-            num_matches += 1
+            if (ignore_zeros==False) or (ignore_zeros==True and features[0,i]!=0):
+                num_matches += 1
     return num_matches
 
 def describe_selection_config(num_features,watermark_kwargs, subgraph_dict):
@@ -76,6 +77,9 @@ def get_model_tag():
         heads_1 = node_classifier_kwargs['heads_1']
         heads_2 = node_classifier_kwargs['heads_2']
         model_tag += f'_heads_{heads_1}_{heads_2}'
+
+    if config.optimization_kwargs['clf_only']==True:
+        model_tag = 'clf_only_' + model_tag
     return model_tag
 
 def get_optimization_tag():
@@ -249,20 +253,23 @@ def get_results_folder_name(dataset_name):
     model_tag = get_model_tag()
     dataset_folder_name = os.path.join(results_dir, dataset_name)
     model_folder_name = os.path.join(dataset_folder_name, model_tag)
-    model_folder_seed_version_name = os.path.join(model_folder_name, seed_tag)
+    model_folder_config_name = os.path.join(model_folder_name, config_name)
+    model_folder_config_name_seed_version_name = os.path.join(model_folder_config_name, seed_tag)
 
     if os.path.exists(dataset_folder_name)==False:
         os.mkdir(dataset_folder_name)
     if os.path.exists(model_folder_name)==False:
         os.mkdir(model_folder_name)
-    if os.path.exists(model_folder_seed_version_name)==False:
-        os.mkdir(model_folder_seed_version_name)
+    if os.path.exists(model_folder_config_name)==False:
+        os.mkdir(model_folder_config_name)
+    if os.path.exists(model_folder_config_name_seed_version_name)==False:
+        os.mkdir(model_folder_config_name_seed_version_name)
     # if os.path.exists(os.path.join(dataset_folder_name, model_folder_name))==False:
     #     os.mkdir(os.path.join(dataset_folder_name, model_folder_name))
     # if os.path.exists(os.path.join(dataset_folder_name, model_folder_name,))==False:
     #     os.mkdir(os.path.join(dataset_folder_name, model_folder_name))
 
-    return model_folder_seed_version_name #os.path.join(dataset_folder_name, model_folder_name, config_name, seed_tag)
+    return model_folder_config_name_seed_version_name #os.path.join(dataset_folder_name, model_folder_name, config_name, seed_tag)
 
 def item_not_in_any_list(item, list_of_lists):
     for sublist in list_of_lists:
@@ -271,7 +278,7 @@ def item_not_in_any_list(item, list_of_lists):
     return True
 
 
-def save_results(dataset_name, node_classifier, history, subgraph_dict=None, all_feature_importances=None, all_watermark_indices=None):#, probas=None):
+def save_results(dataset_name, node_classifier, history, subgraph_dict=None, all_feature_importances=None, all_watermark_indices=None, verbose=False):#, probas=None):
     results_folder_name = get_results_folder_name(dataset_name)
     if os.path.exists(results_folder_name)==False:
         os.mkdir(results_folder_name)
@@ -289,8 +296,11 @@ def save_results(dataset_name, node_classifier, history, subgraph_dict=None, all
                                  config_dict]):
         with open(os.path.join(results_folder_name,object_name),'wb') as f:
             pickle.dump(object,f)
-    print('Node classifier, history, subgraph dict, feature importances, watermark indices, and probas saved in:')
-    print(results_folder_name)
+        f.close()
+    if verbose==True:
+        print('Node classifier, history, subgraph dict, feature importances, watermark indices, and probas saved in:')
+        print(results_folder_name)
+
 
 def unpack_dict(dictionary,keys):
     return [dictionary[k] for k in keys]
