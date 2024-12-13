@@ -264,12 +264,9 @@ class Net(torch.nn.Module):
             for l in range(self.nLayers - 2): # Intermediate conv layers
                 self.convs.append(conv_fn(in_channels=hDim, out_channels=hDim))
             self.convs.append(conv_fn(in_channels=hDim, out_channels=outDim)) # Final conv layer
-        
         self.skip_connections = model_kwargs['skip_connections']
         if self.skip_connections:
             self.lin = torch.nn.Linear(((self.nLayers-1)*hDim)+outDim, outDim)
-
-
         self.feature_weights = torch.zeros(inDim)  # To track feature weights
 
         
@@ -475,3 +472,88 @@ class SAM(Optimizer):
             p=2
         )
         return norm
+    
+
+
+        # inDim = model_kwargs['inDim'] 
+        # hDim = model_kwargs['hDim']
+        # outDim = model_kwargs['outDim']
+        # self.dropout = model_kwargs['dropout']
+        # self.activation_fn = {'elu': F.elu, 'relu': F.relu}[model_kwargs['activation']]
+        # self.nLayers = model_kwargs['nLayers'] 
+
+
+        # conv_fn = {'GAT': GATConv, 'GCN': GCNConv, 'GraphConv': GraphConv, 'SAGE': SAGEConv, 'SGC': SGConv}[model_kwargs['arch']]
+        # print('arch:',model_kwargs['arch'])
+        # print('conv_fn:',conv_fn)
+        # self.convs = nn.ModuleList()
+        # if model_kwargs['arch']=='GAT':
+        #     heads_1 = model_kwargs['heads_1']
+        #     heads_2 = model_kwargs['heads_2']
+        #     self.convs.append(conv_fn(in_channels=inDim, out_channels=hDim // heads_1, heads=heads_1, concat=True, dropout=self.dropout)) # First conv layer
+        #     for l in range(self.nLayers - 2): # Intermediate conv layers
+        #         self.convs.append(conv_fn(in_channels=hDim, out_channels=hDim // heads_2, heads=heads_2, concat=True, dropout=self.dropout))
+        #     self.convs.append(conv_fn(in_channels=hDim, out_channels=outDim, heads=heads_2, concat=False, dropout=self.dropout)) # Final conv layer
+            
+        # elif model_kwargs['arch']!='GAT':
+
+
+
+# class StudentSAGE(torch.nn.Module):
+#     # for knowledge distillation -- so far just another GNN, maybe not anything special
+#     def __init__(self, inDim, hDim, outDim, nLayers=2, dropout=0, activation_fn=F.elu, conv_fn=SAGEConv):
+#         super(StudentSAGE, self).__init__()
+#         self.nLayers = nLayers
+#         self.dropout = dropout
+#         self.activation_fn = activation_fn
+#         self.convs = nn.ModuleList()
+
+#         # First layer
+#         self.convs.append(conv_fn(in_channels=inDim, out_channels=hDim))
+#         # Intermediate layers (fewer compared to the teacher)
+#         for l in range(nLayers - 1):  
+#             self.convs.append(conv_fn(in_channels=hDim, out_channels=hDim))
+#         # Final layer
+#         self.convs.append(conv_fn(in_channels=hDim, out_channels=outDim))
+
+#     def forward(self, x, edge_index):
+#         for l in range(self.nLayers):
+#             x = self.convs[l](x, edge_index)
+#             x = self.activation_fn(x)
+#             x = F.dropout(x, p=self.dropout, training=self.training)
+#         return F.log_softmax(x, dim=1)
+    
+# class NetWithKD(Net):
+#     def __init__(self, teacher_model,**model_kwargs):
+#         super(NetWithKD, self).__init__(**model_kwargs)
+#         self.teacher_model = teacher_model  # Pre-trained teacher model
+#         # self.temperature = model_kwargs.get('temperature', 5.0)  # Temperature for KD
+#         # self.alpha = model_kwargs.get('alpha', 0.5)  # Weight for distillation loss
+
+#     # def distillation_loss(self, student_logits, teacher_logits):
+#     #     student_probs = F.log_softmax(student_logits / self.temperature, dim=1)
+#     #     teacher_probs = F.softmax(teacher_logits / self.temperature, dim=1)
+#     #     return F.kl_div(student_probs, teacher_probs, reduction='batchmean') * (self.temperature ** 2)
+
+#     def forward(self, x, edge_index, y=None, train_mode=False):
+#         student_logits = super().forward(x, edge_index)
+#         if train_mode and y is not None:
+#             with torch.no_grad():
+#                 teacher_logits = self.teacher_model(x, edge_index)
+#             kd_loss = self.distillation_loss(student_logits, teacher_logits)
+#             ce_loss = F.cross_entropy(student_logits, y)
+#             loss = self.alpha * kd_loss + (1 - self.alpha) * ce_loss
+#             return student_logits, loss
+#         return student_logits
+    
+    # def forward(self, x, edge_index, dropout=0):
+    #     intermediate_outputs = []
+    #     for l in range(self.nLayers):
+    #         x = self.convs[l](x,edge_index)
+    #         x = self.activation_fn(x)
+    #         x = F.dropout(x, p=dropout, training=self.training)
+    #         intermediate_outputs.append(x)
+    #     if self.skip_connections == True:
+    #         x = torch.cat(intermediate_outputs, dim=-1)
+    #         x = self.lin(x)
+    #     return F.log_softmax(x, dim=1)

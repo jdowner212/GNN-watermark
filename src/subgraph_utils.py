@@ -39,6 +39,7 @@ def rank_training_nodes_by_degree(dataset_name, graph_to_watermark, max_degree=N
     these_degrees = {k:v for (k,v) in all_degrees.items() if k in nodes_list}
     these_degrees_sorted = {k: v for k, v in sorted(these_degrees.items(), key=lambda item: item[1], reverse=True)}
     ranked_node_indices = list(these_degrees_sorted.keys())
+    del G, nodes_list
     return ranked_node_indices
 
 def determine_whether_to_increment_numHops(dataset_name,sub_size_as_fraction,numSubgraphs,numHops):
@@ -124,6 +125,7 @@ def create_random_subgraph(data, subgraph_size, mask=None, avoid_nodes=None, ver
     # if verbose==True:
     #     print('selected_nodes:',selected_nodes)
     torch.manual_seed(seed)
+    random.seed(seed)
     num_nodes = data.num_nodes
 
     # Convert mask and avoid_nodes to sets for efficient lookups
@@ -147,6 +149,8 @@ def create_random_subgraph(data, subgraph_size, mask=None, avoid_nodes=None, ver
         train_mask=data.train_mask[selected_nodes] if data.train_mask is not None else None,
         test_mask=data.test_mask[selected_nodes] if data.test_mask is not None else None,
         val_mask=data.val_mask[selected_nodes] if data.val_mask is not None else None)
+
+    del eligible_nodes, avoid_nodes_set, sub_edge_index
     return sub_data, selected_nodes
 
 
@@ -215,6 +219,7 @@ def generate_subgraph(data, dataset_name, kwargs, central_node=None, avoid_nodes
         kwargs['khop_kwargs']['numHops']=numHops # may have changed in create_khop_subgraph if the numHops was insufficient for desired subgraph size
         print(f"kwargs['khop_kwargs']['numHops'] inside generate_subgraph after update: {kwargs['khop_kwargs']['numHops']}")
         subgraph_signature = central_node
+        del G
     elif kwargs['method']=='random':
         data_sub, subgraph_node_idx = create_random_subgraph(data, subgraph_size, data.train_mask, avoid_nodes, seed=seed)
         subgraph_signature = '_'.join([str(s) for s in subgraph_node_idx.tolist()])
@@ -242,6 +247,8 @@ def generate_subgraph(data, dataset_name, kwargs, central_node=None, avoid_nodes
         nx.draw_networkx(G_sub, with_labels=False,  node_color = 'blue', node_size=30)
         plt.title(title)
         plt.show()
+        del G_sub, G
+    
 
     return data_sub, subgraph_signature, subgraph_node_idx
 
@@ -288,5 +295,7 @@ def get_masked_subgraph_nodes(data, central_node, hops=2, mask=None):
     else:
         original_node_ids = torch.unique(subgraph_edge_index)
     original_node_ids, _ = torch.sort(original_node_ids)
+
+    del subgraph_edge_index, nodes_to_explore, subgraph_edge_list
     return original_node_ids
 
