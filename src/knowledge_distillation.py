@@ -1,4 +1,4 @@
-from eaaw_graphlime_utils import *
+from knowledge_distillation_utils import *
 import argparse
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -18,14 +18,14 @@ def str2bool(v):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description = 'Watermarking settings')
     parser.add_argument('--dataset', type=str, default='computers',help='Dataset Name')
-    parser.add_argument('--seed',                                             type=int,               default=0,  help='Random seed.')
+    parser.add_argument('--seed',    type=int, default=0,  help='Random seed.')
     args, _ = parser.parse_known_args()
     dataset_name = args.dataset
     seed = args.seed
     load_data=True
     save_data=False
 
-    parser.add_argument('--train_ratio',      type=float,   default=dataset_attributes[dataset_name]['train_ratio'],  help='Ratio of dataset comprising train set.')
+    parser.add_argument('--train_ratio', type=float, default=dataset_attributes[dataset_name]['train_ratio'],  help='Ratio of dataset comprising train set.')
     args, _ = parser.parse_known_args()
     val_ratio = test_ratio = (1-args.train_ratio)/2
     if dataset_attributes[dataset_name]['single_or_multi_graph']=='single':
@@ -212,8 +212,6 @@ if __name__ == '__main__':
             subgraph_dir = os.path.join(data_dir,'random_subgraphs')
             this_subgraph_dir = os.path.join(subgraph_dir,dataset_name)
 
-
-            # arch_folder = get_arch_folder(args,data_training_path)
             model_path = get_model_path(args, architecture_folder)
             model_folder = os.path.join(architecture_folder, model_path, f'seed{args.seed}')
 
@@ -247,7 +245,7 @@ if __name__ == '__main__':
                     with open(subgraph_dir_path,'wb') as f:
                         pickle.dump(subgraphs_,f)
 
-                compute_regression_results=True#args.compute_regression_results
+                compute_regression_results=True
                 get_match_distribution=True
 
                 all_raw_betas=None
@@ -262,9 +260,7 @@ if __name__ == '__main__':
                 if compute_regression_results==True:
                     num_nodes = int(size*sum(data.train_mask))
                     print(f'Size: {size} ({num_nodes} nodes)')
-                    ###
                     student_node_classifier.eval()
-                    ###
                     all_raw_betas = []
                     p0s = []
                     p1s = []

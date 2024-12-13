@@ -41,62 +41,10 @@ def calculate_sparsity(model,verbose=False):
     return sparsity
 
 
-# def apply_pruning(node_classifier,amount=0.3):
-#     for name, module in node_classifier.named_modules():
-#         if isinstance(module, SAGEConv):
-#             prune.l1_unstructured(module.lin_l, name='weight', amount=amount)
-#             if hasattr(module, 'lin_r'):
-#                 prune.l1_unstructured(module.lin_r, name='weight', amount=amount)
-#         elif isinstance(module, GCNConv):
-#             if hasattr(module, 'lin'):
-#                 prune.l1_unstructured(module.lin, name='weight', amount=amount)
-#             else:
-#                 print(f"{name} does not have an internal 'lin' attribute with 'weight'.")
-#         elif isinstance(module, (GATConv, GCNConv, GraphConv)):
-#             prune.l1_unstructured(module, name='weight', amount=amount)
-#         elif isinstance(module, (GATConv, GCNConv, GraphConv, dense.linear.Linear, Linear)):
-#             prune.l1_unstructured(module, name='weight', amount=amount)
-# # import torch_geometric.nn.dense.linear.Linear as Linear
-
-#     return node_classifier
-
 def apply_pruning(node_classifier, amount=0.3, structured=True, verbose=False):
     for name, module in node_classifier.named_modules():
         if verbose==True:
-            if isinstance(module, SAGEConv):
-                print('SAGE')
-            elif isinstance(module, GCNConv):
-                print("GCNConv")
-            elif isinstance(module, dense.linear.Linear):
-                print("dense.linear.Linear")
-            elif isinstance(module,Linear):
-                print("Linear")
-            elif isinstance(module,GATConv):
-                print("GATConv")
-            elif isinstance(module,GraphConv):
-                print("GraphConv")
-            else:
-                print('none of the above:', type(module))
-                try:
-                    _  = module.lin_l.weight
-                    print("-- lin_l.weight: check")
-                except:
-                    ('-- no lin_l.weight attribute')
-                try:
-                    _ = module.lin_r.weight
-                    print("-- lin_r.weight: check")
-                except:
-                    ('-- no lin_r.weight attribute')
-                try:
-                    _ = module.lin.weight
-                    print("-- lin.weight: check")
-                except:
-                    ('-- no lin.weight attribute')
-                try:
-                    _ = module.weight.data
-                    print("-- weight: check")
-                except:
-                    ('-- no weight attribute')
+            pass
         if hasattr(module,'weight')==False:
             if verbose==True:
                 print("Doesn't  have attribute 'weight")
@@ -107,7 +55,7 @@ def apply_pruning(node_classifier, amount=0.3, structured=True, verbose=False):
                 prune.l1_unstructured(module, name='weight', amount=amount)
             if verbose==True:
                 print('-- Pruning module.weight')
-        if hasattr(module, 'lin')==False:
+        if hasattr(module, 'lin')==False and verbose==True:
             if verbose==True:
                 print("-- Doesn't have attribute 'lin")
         else:
@@ -139,8 +87,6 @@ def apply_pruning(node_classifier, amount=0.3, structured=True, verbose=False):
                 print('pruning module.lin_r.weight')
 
 
-# easy_run_node_classifier(Trainer_object, node_classifier, data, mu_natural, sigma_natural, subgraph_dict, subgraph_dict_not_wmk, watermark_loss_kwargs, optimization_kwargs, 
-                            #  regression_kwargs, target_confidence=0.99, also_show_un_watermarked_counts=True)
 def run_prune(Trainer_object, data, mu_natural, sigma_natural, model_folder, subgraph_dict, subgraph_dict_not_watermarked, config_dict, seed, pruning_type='structured', save=True, target_confidence=0.99, continuation=False, starting_epoch=0, also_show_un_watermarked_counts=True):
     watermark_loss_kwargs = config_dict['watermark_loss_kwargs']
     optimization_kwargs = config_dict['optimization_kwargs']
@@ -150,7 +96,7 @@ def run_prune(Trainer_object, data, mu_natural, sigma_natural, model_folder, sub
     assert pruning_type in ['structured','unstructured']
     structured = True if pruning_type=='structured' else False
 
-    results_prune_filename = f'results_prune_{pruning_type}.txt'# if continuation==False else f'results_prune_{pruning_type}_continuation_from_{starting_epoch}.txt'
+    results_prune_filename = f'results_prune_{pruning_type}.txt'
     text_path = os.path.join(model_folder, results_prune_filename)
 
 
@@ -219,7 +165,7 @@ def run_fine_tune(Trainer_object, dataset_name, data, mu_natural, sigma_natural,
     params_         = list(node_classifier.parameters())
     optimizer       = optim.Adam(params_, lr=lr)
 
-    mask_to_train_on = data.test_mask.clone()#data.train_mask.clone()
+    mask_to_train_on = data.test_mask.clone()
     all_subgraph_indices = []
     for s in subgraph_dict.keys():
         try:

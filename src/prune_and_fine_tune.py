@@ -1,4 +1,4 @@
-from eaaw_graphlime_utils import *
+from embed_and_verify import *
 from prune_and_fine_tune_utils import *
 
 import argparse
@@ -6,84 +6,6 @@ import argparse
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 
-
-
-# def get_node_classifier_and_optimizer_and_subgraph_dict_for_further_processing(model_path, lr):
-#     subgraph_dict   = pickle.load(open(os.path.join(model_path,'subgraph_dict'),'rb'))
-#     node_classifier = pickle.load(open(os.path.join(model_path,'node_classifier'),'rb'))
-#     params_         = list(node_classifier.parameters())
-#     optimizer       = optim.Adam(params_, lr=lr)
-#     return node_classifier, optimizer, subgraph_dict
-
-
-# def run_prune(data, model_path, subgraph_dict, subgraph_dict_not_watermarked, config_dict):
-#     watermark_loss_kwargs = config_dict['watermark_loss_kwargs']
-#     optimization_kwargs = config_dict['optimization_kwargs']
-#     regression_kwargs = config_dict['regression_kwargs']
-#     node_classifier_kwargs = config_dict['node_classifier_kwargs']
-#     # subgraph_kwargs = config_dict['subgraph_kwargs']
-    
-#     text_path = os.path.join(model_path, 'results_prune.txt')
-#     for amount in np.linspace(0,1,11)[:-1]:
-#         node_classifier = pickle.load(open(os.path.join(model_path,'node_classifier'),'rb'))
-#         apply_pruning(node_classifier,amount=amount)
-#         watermark_match_rates, acc_trn, acc_val, target_matches, \
-#             match_count, match_count_conf, \
-#                 match_count_not_watermarked, \
-#                     match_count_conf_not_watermarked = test_node_classifier(node_classifier, data, subgraph_dict, subgraph_dict_not_watermarked, watermark_loss_kwargs, optimization_kwargs, regression_kwargs, node_classifier_kwargs, task='prune', seed=0)
-        
-#         mean_watermark_match_rate = np.mean(watermark_match_rates)
-#         if mean_watermark_match_rate==0:
-#             match_count_conf = np.nan
-
-#         print(f'Prune rate: {np.round(amount, 3)}')
-#         print(f'Train acc: {np.round(acc_trn,3)}'.ljust(20) + f'Val acc: {np.round(acc_val,3)}'.ljust(17) + f'Avg wmk match rate: {np.round(mean_watermark_match_rate,3)}'.ljust(30) + f'Target # matches: {target_matches}'.ljust(26) + f'# Matches Wmk Subgraphs: {match_count}'.ljust(32) + f'Confidence: {np.round(match_count_conf,3)}'.ljust(22) + f'# Matches Un-Wmk Subgraphs: {match_count_not_watermarked}'.ljust(32) + f'Confidence: {np.round(match_count_conf_not_watermarked,3)}')
-#         with open(text_path,'a') as f:
-#             f.write(f'Prune rate: {np.round(amount, 3)}\n')
-#             f.write(f'Train acc: {np.round(acc_trn,3)}'.ljust(20) + f'Val acc: {np.round(acc_val,3)}'.ljust(17) + f'Avg wmk match rate: {np.round(mean_watermark_match_rate,3)}'.ljust(30) + f'Target # matches: {target_matches}'.ljust(26) + f'# Matches Wmk Subgraphs: {match_count}'.ljust(32) + f'Confidence: {np.round(match_count_conf,3)}'.ljust(22) + f'# Matches Un-Wmk Subgraphs: {match_count_not_watermarked}'.ljust(32) + f'Confidence: {np.round(match_count_conf_not_watermarked,3)}\n')
-#         f.close()
-
-# def run_fine_tune(data, model_path, subgraph_dict, subgraph_dict_not_watermarked):
-#     watermark_loss_kwargs = config_dict['watermark_loss_kwargs']
-#     optimization_kwargs = config_dict['optimization_kwargs']
-#     regression_kwargs = config_dict['regression_kwargs']
-#     node_classifier_kwargs = config_dict['node_classifier_kwargs']
-
-#     node_classifier = pickle.load(open(os.path.join(model_path,'node_classifier'),'rb'))
-#     params_         = list(node_classifier.parameters())
-#     optimizer       = optim.Adam(params_, lr=0.1*config_dict['optimization_kwargs']['lr'])
-#     node_aug, edge_aug  = collect_augmentations()
-#     train_nodes_to_consider_mask = torch.where(data.test_mask==True)[0]
-#     augment_seed=config.seed
-#     all_subgraph_indices = []
-#     for s in subgraph_dict.keys():
-#         all_subgraph_indices += subgraph_dict[s]['nodeIndices']
-
-#     text_path = os.path.join(model_path, 'results_fine_tune.txt')
-#     for epoch in tqdm(range(50)):
-#         augment_seed=update_seed(augment_seed)      
-#         optimizer.zero_grad()
-#         edge_index, x, y    = augment_data(data, node_aug, edge_aug, train_nodes_to_consider_mask, all_subgraph_indices, seed=augment_seed)
-#         log_logits = node_classifier(x, edge_index, config.node_classifier_kwargs['dropout'])
-#         loss   = F.nll_loss(log_logits[train_nodes_to_consider_mask], data.y[train_nodes_to_consider_mask])
-#         acc_trn = accuracy(log_logits[data.test_mask], y[data.test_mask],verbose=False)
-#         acc_val = accuracy(log_logits[data.val_mask],   y[data.val_mask],verbose=False)
-#         loss.backward(retain_graph=False)
-#         optimizer.step()
-
-#         _, acc_trn, acc_val, _, \
-#             match_count, match_count_conf, \
-#                 match_count_not_watermarked, \
-#                     match_count_conf_not_watermarked = test_node_classifier(node_classifier, data, subgraph_dict, subgraph_dict_not_watermarked, watermark_loss_kwargs, optimization_kwargs, regression_kwargs, node_classifier_kwargs, task='prune', seed=0)
-        
-#         message = f'Epoch: {epoch:3d}, loss_primary = {loss:.3f}, train (test) acc = {acc_trn:.3f}, val acc = {acc_val:.3f}, match_count = {match_count}, confidence = {match_count_conf:.3f}, match_count_un_wmk = {match_count_not_watermarked}, confidence_un_wmk = {match_count_conf_not_watermarked:.3f}'
-#         print(message)
-#         with open(text_path,'a') as f:
-#             f.write(message + '\n')
-#         f.close()
-    
-#     with open(os.path.join(model_path,'_fine_tuned'),'wb') as f:
-#         pickle.dump(node_classifier, f)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description = 'Test pruning settings')
@@ -126,66 +48,6 @@ if __name__ == '__main__':
         run_prune(data, mu_natural, sigma_natural, args.model_path, subgraph_dict, subgraph_dict_not_watermarked, config_dict, args.seed, 
                   pruning_type='structured',
                   target_confidence=0.99)
-        # text_path = os.path.join(args.model_path, 'results_prune.txt')
-        # for amount in np.linspace(0,1,11)[:-1]:
-        #     node_classifier = pickle.load(open(os.path.join(args.model_path,'node_classifier'),'rb'))
-        #     apply_pruning(node_classifier,amount=amount)
-        #     watermark_match_rates, acc_trn, acc_val, target_matches, \
-        #         match_count, match_count_conf, \
-        #             match_count_not_watermarked, \
-        #                 match_count_conf_not_watermarked = test_node_classifier(node_classifier, data, subgraph_dict, subgraph_dict_not_watermarked, watermark_loss_kwargs, optimization_kwargs, regression_kwargs, node_classifier_kwargs, task='prune', seed=0)
-            
-        #     mean_watermark_match_rate = np.mean(watermark_match_rates)
-        #     if mean_watermark_match_rate==0:
-        #         match_count_conf = np.nan
-
-        #     print(f'Prune rate: {np.round(amount, 3)}')
-        #     print(f'Train acc: {np.round(acc_trn,3)}'.ljust(20) + f'Val acc: {np.round(acc_val,3)}'.ljust(17) + f'Avg wmk match rate: {np.round(mean_watermark_match_rate,3)}'.ljust(30) + f'Target # matches: {target_matches}'.ljust(26) + f'# Matches Wmk Subgraphs: {match_count}'.ljust(32) + f'Confidence: {np.round(match_count_conf,3)}'.ljust(22) + f'# Matches Un-Wmk Subgraphs: {match_count_not_watermarked}'.ljust(32) + f'Confidence: {np.round(match_count_conf_not_watermarked,3)}')
-        #     with open(text_path,'a') as f:
-        #         f.write(f'Prune rate: {np.round(amount, 3)}\n')
-        #         f.write(f'Train acc: {np.round(acc_trn,3)}'.ljust(20) + f'Val acc: {np.round(acc_val,3)}'.ljust(17) + f'Avg wmk match rate: {np.round(mean_watermark_match_rate,3)}'.ljust(30) + f'Target # matches: {target_matches}'.ljust(26) + f'# Matches Wmk Subgraphs: {match_count}'.ljust(32) + f'Confidence: {np.round(match_count_conf,3)}'.ljust(22) + f'# Matches Un-Wmk Subgraphs: {match_count_not_watermarked}'.ljust(32) + f'Confidence: {np.round(match_count_conf_not_watermarked,3)}\n')
-        #     f.close()
 
     if args.fine_tune==True:
         run_fine_tune(data, mu_natural, sigma_natural , args.model_path, subgraph_dict, subgraph_dict_not_watermarked, config_dict, args.seed, target_confidence=0.99)
-        # text_path = os.path.join(args.model_path, 'results_fine_tune.txt')
-        # node_classifier = pickle.load(open(os.path.join(args.model_path,'node_classifier'),'rb'))
-        # params_         = list(node_classifier.parameters())
-        # # config_dict     = pickle.load(open(os.path.join(args.model_path,'config_dict'),'rb'))
-        # optimizer       = optim.Adam(params_, lr=0.1*config_dict['optimization_kwargs']['lr'])
-
-        # sig_0 = list(subgraph_dict.keys())[0]
-        # watermark = subgraph_dict[sig_0]['watermark']
-        # node_aug, edge_aug  = collect_augmentations()
-        # train_nodes_to_consider_mask = torch.where(data.test_mask==True)[0]
-        # augment_seed=config.seed
-        # all_subgraph_indices = []
-        # for s in subgraph_dict.keys():
-        #     all_subgraph_indices += subgraph_dict[s]['nodeIndices']
-
-        # for epoch in tqdm(range(50)):
-        #     augment_seed=update_seed(augment_seed)      
-        #     edge_index, x, y    = augment_data(data, node_aug, edge_aug, train_nodes_to_consider_mask, all_subgraph_indices, seed=augment_seed)
-
-        #     optimizer.zero_grad()
-        #     log_logits = node_classifier(x, edge_index, config.node_classifier_kwargs['dropout'])
-        #     loss   = F.nll_loss(log_logits[train_nodes_to_consider_mask], data.y[train_nodes_to_consider_mask])
-        #     acc_trn = accuracy(log_logits[data.test_mask], y[data.test_mask],verbose=False)
-        #     acc_val = accuracy(log_logits[data.val_mask],   y[data.val_mask],verbose=False)
-        #     loss.backward(retain_graph=False)
-        #     optimizer.step()
-
-
-        #     watermark_match_rates, acc_trn, acc_val, target_matches, \
-        #         match_count, match_count_conf, \
-        #             match_count_not_watermarked, \
-        #                 match_count_conf_not_watermarked = test_node_classifier(node_classifier, data, subgraph_dict, subgraph_dict_not_watermarked, watermark_loss_kwargs, optimization_kwargs, regression_kwargs, node_classifier_kwargs, task='prune', seed=0)
-            
-        #     message = f'Epoch: {epoch:3d}, loss_primary = {loss:.3f}, train (test) acc = {acc_trn:.3f}, val acc = {acc_val:.3f}, match_count = {match_count}, confidence = {match_count_conf:.3f}, match_count_un_wmk = {match_count_not_watermarked}, confidence_un_wmk = {match_count_conf_not_watermarked:.3f}'
-        #     print(message)
-        #     with open(text_path,'a') as f:
-        #         f.write(message + '\n')
-        #     f.close()
-        
-        # with open(os.path.join(args.model_path,'_fine_tuned'),'wb') as f:
-        #     pickle.dump(node_classifier, f)
